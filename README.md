@@ -245,6 +245,11 @@ order, each experiment's in turn, and in each its data items in the order of dat
 may name an item computed before it there or in an earlier sub-experiment. Each feature's `kwargs` hold the values such
 names stand for, so `sliceRangeBounds` gives a host the samples an `*_in_range` operation took, to draw it over them.
 
+The operations computed (`COMPUTED_OPERATIONS`) are `max`, `min`, `mean` and `max_minus_min`, each over all of its
+sub-experiment or, as `*_in_range`, over its `start_frac` to `end_frac`, and `first_peak_time` of the operands
+`[t, V]`: the time of V's first peak as scipy's `find_peaks` finds it (at least `spike_min_thresh` high, when given),
+in the sub-experiment's own time, or its last time when there is none. A host draws it as a vertical line.
+
 A plot pairs, for each experiment its `y` group has an item in, that item's feature with the `x` group's in the same
 experiment (`feature_vs_feature`), or the number `params_to_change[key][experiment][subexperiment_idx]`
 (`feature_vs_input`): the proposal's two kinds, and no others.

@@ -21,6 +21,10 @@ Outputs and their feature plots form are gone.
   draw a feature over them; `computeFeatures` and `computeDataItemFeatures` give each feature its `kwargs`, those naming
   an earlier feature as its value. Golden vectors from CA 7e9fdb55's own get_obs_output_dict and range funcs
   (`scripts/generate_operation_vectors.py`) check both.
+- `first_peak_time` is computed (`applyOperation`, `computeFeatures`, `computeDataItemFeatures`): over the operands
+  `[t, V]`, the time of V's first peak as scipy's `find_peaks` finds it, at least `spike_min_thresh` high when given,
+  or the last time when there is none, as CA's own. An operation now reads as many operands as CA's func names, and
+  its kwargs are checked against those it fills. Vectors from CA 7e9fdb55's func check it.
 - The editor: `ObsDataEditor`, the top level, a section per key of the document as CUFLynx's dialog has them, headed by
   the raw key: `protocol_info`, `data_items`, `prediction_items` and `prediction_plots`. It holds the experiment shown,
   and the row selected, whose experiment it shows and whose sub-experiment it tints. A data-only document shows
