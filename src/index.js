@@ -1,6 +1,7 @@
 /**
- * The protocol core: reads, checks, edits and previews the protocol_info, outputs and measured data items of a
- * circulatory_autogen obs_data.json, computes a run's features as it does, and pairs them into its prediction plots.
+ * The protocol core: reads, checks, edits and previews the protocol_info, data items, prediction items and prediction
+ * plots of a circulatory_autogen obs_data.json, computes a run's features as it does, and pairs them into its
+ * prediction plots.
  * Plain JavaScript, no framework.
  */
 export * from './core/dataItemValidation.js'

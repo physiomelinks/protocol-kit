@@ -91,8 +91,8 @@ const findSubExperiment = (key, item) => item.subexperiment_idx ?? (key === 'dat
  * @param {number} experiment
  * @param {number} [sub] - Leave out for the whole experiment. A data item without a subexperiment_idx is in the
  *   first sub-experiment; a prediction item without one follows the experiment's last, so is in none.
- * @returns {string[]} Their names, then those of the feature plots removing a sub-experiment removes (see
- *   findPlotsLosingInput), as `<name> (feature plot)`.
+ * @returns {string[]} Their names, then those of the prediction plots removing a sub-experiment removes (see
+ *   findPlotsLosingInput), as `<name> (prediction plot)`.
  */
 export function findObservationsAt(document, experiment, sub = null) {
   const items = Array.isArray(document) ? document.map((item) => ['data_items', item]) : ['data_items', 'prediction_items'].flatMap((key) => (document?.[key] ?? []).map((item) => [key, item]))
@@ -101,7 +101,7 @@ export function findObservationsAt(document, experiment, sub = null) {
     .map(([, item]) => item.data_item_name ?? '(unnamed)')
   if (sub == null || Array.isArray(document)) return names
   const plots = listPredictionPlots(document)
-  return [...names, ...findPlotsLosingInput(document, experiment, sub).map((index) => `${plots[index].name ?? '(unnamed)'} (feature plot)`)]
+  return [...names, ...findPlotsLosingInput(document, experiment, sub).map((index) => `${plots[index].name ?? '(unnamed)'} (prediction plot)`)]
 }
 
 /**

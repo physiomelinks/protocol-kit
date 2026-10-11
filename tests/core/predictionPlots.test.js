@@ -216,7 +216,7 @@ describe('plots follow protocol edits', () => {
   it('removes a plot that loses its input, and says so before', () => {
     // Removing sub-experiment 1 of experiment 0 takes the command the plot reads there; its items there go too.
     expect(findPlotsLosingInput(DOCUMENT, 0, 1)).toEqual([1])
-    expect(findObservationsAt(DOCUMENT, 0, 1)).toEqual(['I_peak_e0', 'V_step_e0', 'Peak I_Na vs command (feature plot)'])
+    expect(findObservationsAt(DOCUMENT, 0, 1)).toEqual(['I_peak_e0', 'V_step_e0', 'Peak I_Na vs command (prediction plot)'])
     expect(removeSubExperiment(DOCUMENT, 0, 1).prediction_plots.map(({ name }) => name)).toEqual(['Peak I_Na vs step potential'])
     // Removing an earlier one of experiment 0 alone would read another sub-experiment there than in the others.
     expect(findPlotsLosingInput(DOCUMENT, 0, 0)).toEqual([1])
