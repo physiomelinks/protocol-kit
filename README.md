@@ -325,10 +325,9 @@ for an operation of no operands), source and comment. A row CA would refuse is t
 too; one whose operation CA can't differentiate is tinted orange, with CUFLynx's warning. An item a row can't hold (a
 series, a frequency, a distribution, an operation the vocabulary hasn't) is kept as it is, and counted: "N
 non-editable item(s) (series / frequency / custom operation) will be preserved unchanged." Its columns are keys of
-`DATA_ITEM_COLUMNS`
-(`name`, `value`, `std`, `operation`, `experiment`, `subexperiment`, `operands`, `traceName`, `unit`, `weight`, `cost`,
-`plot`, `operationKwargs`, `source`, `comment`, and `differentiable` for the tint), and the presets
-(`DATA_ITEM_COLUMN_PRESETS`) name them:
+`DATA_ITEM_COLUMNS` (`name`, `value`, `std`, `operation`, `experiment`, `subexperiment`, `operands`, `traceName`,
+`unit`, `weight`, `cost`, `plot`, `operationKwargs`, `source`, `comment`, and `differentiable` for the tint), and the
+presets (`DATA_ITEM_COLUMN_PRESETS`) name them:
 
 - `'cuflynx'`, for an app that calibrates: every column, editable.
 - `'phlynx'`, for an app that only runs the protocol: the data as measured, read-only, without `weight`, `cost` and
