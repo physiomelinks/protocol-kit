@@ -88,6 +88,19 @@ describe('ObsDataEditor', () => {
     expect(timeline().props()).toMatchObject({ activeExp: 1, highlightExp: 0 })
   })
 
+  it('clears a selection the document no longer has, as an undo leaves it', async () => {
+    const document = readFixture('prediction_items_536_obs_data.json')
+    mountEditor(document)
+    const rows = () => wrapper.findAll('[data-testid="od-prediction-row"]')
+    const last = document.prediction_items.length - 1
+    await rows()[last].find('.od-main').trigger('click')
+    expect(rows()[last].classes()).toContain('od-selected')
+    await wrapper.setProps({ document: { ...document, prediction_items: document.prediction_items.slice(0, -1) } })
+    await wrapper.setProps({ document })
+    expect(rows()[last].classes()).not.toContain('od-selected')
+    expect(wrapper.findComponent(ProtocolInfoEditor).props()).toMatchObject({ highlightExp: null })
+  })
+
   it("passes each section's edits on", async () => {
     const document = readFixture('prediction_items_536_obs_data.json')
     mountEditor(document)

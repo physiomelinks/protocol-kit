@@ -40,7 +40,16 @@
             </select>
           </template>
           <span class="od-rowbtns">
-            <Button :icon="expanded.has(row.index) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" text rounded size="small" aria-label="details" @click.stop="toggle(row)" />
+            <Button
+              :icon="expanded.has(row.index) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+              text
+              rounded
+              size="small"
+              aria-label="details"
+              :aria-expanded="expanded.has(row.index)"
+              :aria-controls="expanded.has(row.index) ? detailId(row) : undefined"
+              @click.stop="toggle(row)"
+            />
             <Button v-if="isEditable" icon="pi pi-times" text rounded size="small" severity="danger" aria-label="remove" @click.stop="remove(row)" />
           </span>
         </div>
@@ -55,7 +64,7 @@
           {{ message }}
         </p>
 
-        <div v-if="expanded.has(row.index)" class="od-detail">
+        <div v-if="expanded.has(row.index)" :id="detailId(row)" class="od-detail">
           <template v-for="column in detailColumns" :key="column.key">
             <div v-if="column.key === 'operands'" class="od-field">
               operands
@@ -106,7 +115,7 @@
             </template>
             <label v-else-if="column.key === 'plot'">
               plot_type
-              <span v-if="!isEditable" class="od-text">{{ row.plotType ?? '(default)' }}</span>
+              <span v-if="!isEditable" class="od-text">{{ row.plotType == null ? '(default)' : row.plotType || '(none)' }}</span>
               <select v-else :value="row.plotType ?? DEFAULT_PLOT" aria-label="plot_type" @change="(event) => edit(row, { plotType: event.target.value === DEFAULT_PLOT ? null : event.target.value })">
                 <option :value="DEFAULT_PLOT">(default)</option>
                 <option v-for="plotType in ['', ...vocabulary.plotTypes]" :key="plotType" :value="plotType">{{ plotType || '(none)' }}</option>
@@ -146,7 +155,7 @@
  * DATA_ITEM_COLUMN_PRESETS or a list of keys). Rows CA would refuse are tinted and say why; an item a row can't hold (a
  * series, a frequency, an operation CA has not, a distribution) is kept as it is, and counted below.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
 
 import Button from 'primevue/button'
 
@@ -206,7 +215,8 @@ const isRowItem = (row) =>
 
 const rows = computed(() => items.value.filter(isRowItem))
 const preservedCount = computed(() => items.value.length - rows.value.length)
-const checked = computed(() => (isEditable.value ? validateDataItems(props.document, { vocabulary: props.vocabulary }) : null))
+// Checked read-only too, as CA refuses the file all the same.
+const checked = computed(() => validateDataItems(props.document, { vocabulary: props.vocabulary }))
 
 /**
  * Words an item's message for its row: without CA's `data_items[i] ('name')`.
@@ -222,7 +232,7 @@ const describeItemMessage = (message) => message.replace(/^data_items\[\d+\] \('
  * @param {Object} row
  * @returns {string[]}
  */
-const problemsOf = (row) => (checked.value?.itemErrors[row.index] ?? []).map(describeItemMessage)
+const problemsOf = (row) => (checked.value.itemErrors[row.index] ?? []).map(describeItemMessage)
 
 /**
  * Whether a row is one CA would refuse, as CUFLynx's rowInvalid says: a value and a std above 0 that are numbers, and
@@ -232,7 +242,6 @@ const problemsOf = (row) => (checked.value?.itemErrors[row.index] ?? []).map(des
  * @returns {boolean}
  */
 function isInvalid(row) {
-  if (!isEditable.value) return false
   const hasInputs = row.operands.some(Boolean) || (!!row.operation && Object.keys(row.operationKwargs).length > 0)
   return !Number.isFinite(row.value) || !Number.isFinite(row.std) || !(row.std > 0) || !hasInputs || problemsOf(row).length > 0
 }
@@ -281,6 +290,10 @@ const edit = (row, change) => emitDocument(updateDataItem(props.document, row.in
 
 // The items whose details are open, by place.
 const expanded = ref(new Set())
+// The operand slots shown of the items the user added slots to, by place.
+const addedSlots = ref(new Map())
+const idPrefix = useId()
+const detailId = (row) => `${idPrefix}-detail-${row.index}`
 
 /**
  * Selects an item, and opens its details, as clicking anywhere on its row does in CUFLynx.
@@ -313,14 +326,17 @@ function add() {
 }
 
 /**
- * Removes an item; the details open after it stay open.
+ * Removes an item; the details open after it stay open, and the item selected stays selected.
  *
  * @param {Object} row
  */
 function remove(row) {
-  expanded.value = new Set([...expanded.value].filter((index) => index !== row.index).map((index) => (index > row.index ? index - 1 : index)))
+  const shift = (index) => (index > row.index ? index - 1 : index)
+  expanded.value = new Set([...expanded.value].filter((index) => index !== row.index).map(shift))
+  addedSlots.value = new Map([...addedSlots.value].filter(([index]) => index !== row.index).map(([index, count]) => [shift(index), count]))
   emitDocument(removeDataItem(props.document, row.index))
   if (props.selected === row.index) emit('select', null)
+  else if (props.selected != null && props.selected > row.index) emit('select', props.selected - 1)
 }
 
 // The experiments, or the one of a document with no protocol, and the item's own when it is out of range.
@@ -347,14 +363,14 @@ const operationOptions = (row) => [...new Set(['', ...operationNames.value, row.
 
 /**
  * The variables an operation reads, by place: those it names when it takes a fixed number, else as many as the item
- * has, one at least.
+ * has or the user added, one at least.
  *
  * @param {Object} row
  * @returns {string[]}
  */
 function operandSlots(row) {
   const spec = operationSpec(row)
-  const count = spec && !spec.acceptsAny ? Math.max(spec.operands.length, row.operands.length) : Math.max(row.operands.length, 1)
+  const count = spec && !spec.acceptsAny ? Math.max(spec.operands.length, row.operands.length) : Math.max(row.operands.length, 1, addedSlots.value.get(row.index) ?? 0)
   return Array.from({ length: count }, (_, position) => row.operands[position] ?? '')
 }
 const operandsAreFixed = (row) => !!operationSpec(row) && !operationSpec(row).acceptsAny
@@ -376,11 +392,14 @@ function changeOperand(row, position, name) {
 }
 
 /**
- * Adds a variable to an operation that takes any number.
+ * Adds a slot for a variable to an operation that takes any number, after those shown. The document keeps no blank
+ * operand, so the slot is the editor's until it is filled.
  *
  * @param {Object} row
  */
-const addOperand = (row) => edit(row, { operands: [...row.operands, ''] })
+function addOperand(row) {
+  addedSlots.value = new Map([...addedSlots.value, [row.index, operandSlots(row).length + 1]])
+}
 
 /**
  * Changes the operation, dropping the kwargs it doesn't take and the operands past those it reads, as CUFLynx does.

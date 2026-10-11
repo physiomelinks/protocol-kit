@@ -46,7 +46,16 @@
           </template>
           <span class="od-rowbtns">
             <span v-if="row.isValidationData" class="od-chip" title="Held-out data to validate against: kept as it is">obs</span>
-            <Button :icon="expanded.has(row.index) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" text rounded size="small" aria-label="details" @click.stop="toggle(row)" />
+            <Button
+              :icon="expanded.has(row.index) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+              text
+              rounded
+              size="small"
+              aria-label="details"
+              :aria-expanded="expanded.has(row.index)"
+              :aria-controls="expanded.has(row.index) ? detailId(row) : undefined"
+              @click.stop="toggle(row)"
+            />
             <Button v-if="!readOnly" icon="pi pi-times" text rounded size="small" severity="danger" aria-label="remove" @click.stop="remove(row)" />
           </span>
         </div>
@@ -56,7 +65,7 @@
           {{ message }}
         </p>
 
-        <div v-if="expanded.has(row.index)" class="od-detail">
+        <div v-if="expanded.has(row.index)" :id="detailId(row)" class="od-detail">
           <template v-for="column in detailColumns" :key="column.key">
             <template v-if="column.key === 'operationKwargs'">
               <KwargField
@@ -96,7 +105,7 @@
  * experiment, sub-experiment, operation) and its name, item label and operation kwargs under a chevron. Each item is
  * checked as CA #536 reads it, its errors under its row; held-out data is marked `obs`, and kept as it is.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
 
 import Button from 'primevue/button'
 
@@ -188,6 +197,8 @@ const edit = (row, change) => emitDocument(updatePredictionItem(props.document, 
 
 // The items whose details are open, by place.
 const expanded = ref(new Set())
+const idPrefix = useId()
+const detailId = (row) => `${idPrefix}-detail-${row.index}`
 
 /**
  * Selects an item and opens its details.
@@ -220,7 +231,7 @@ function add() {
 }
 
 /**
- * Removes an item; the details open after it stay open.
+ * Removes an item; the details open after it stay open, and the item selected stays selected.
  *
  * @param {Object} row
  */
@@ -228,6 +239,7 @@ function remove(row) {
   expanded.value = new Set([...expanded.value].filter((index) => index !== row.index).map((index) => (index > row.index ? index - 1 : index)))
   emitDocument(removePredictionItem(props.document, row.index))
   if (props.selected === row.index) emit('select', null)
+  else if (props.selected != null && props.selected > row.index) emit('select', props.selected - 1)
 }
 
 /**

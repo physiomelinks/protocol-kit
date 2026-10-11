@@ -132,6 +132,24 @@ describe('PredictionItemsSection', () => {
     expect(lastDocument().prediction_items).toEqual(document.prediction_items.slice(1))
   })
 
+  it('keeps the selection on its item when a row above it is removed', async () => {
+    mountSection(readFixture('prediction_items_536_obs_data.json'), { selected: 2 })
+    await rows()[0].find('[aria-label="remove"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[1]])
+    await wrapper.setProps({ selected: 1 })
+    await rows()[1].find('[aria-label="remove"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[1], [null]])
+  })
+
+  it('says whether the details under a chevron are open', async () => {
+    mountSection(readFixture('prediction_items_536_obs_data.json'))
+    const chevron = () => rows()[0].find('[aria-label="details"]')
+    expect(chevron().attributes('aria-expanded')).toBe('false')
+    await chevron().trigger('click')
+    expect(chevron().attributes('aria-expanded')).toBe('true')
+    expect(rows()[0].find('.od-detail').attributes('id')).toBe(chevron().attributes('aria-controls'))
+  })
+
   it('lists them read-only when the host says so, and says there are none', () => {
     mountSection(readFixture('prediction_items_536_obs_data.json'), { readOnly: true })
     expect(wrapper.find('input, select').exists()).toBe(false)

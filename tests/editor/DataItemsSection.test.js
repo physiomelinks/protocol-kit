@@ -115,6 +115,37 @@ describe("DataItemsSection, CUFLynx's preset", () => {
     expect(rows()[1].find('.od-detail').exists()).toBe(false)
   })
 
+  it('says whether the details under a chevron are open, and which they are', async () => {
+    mountSection(DOCUMENT)
+    const chevron = () => rows()[0].find('[aria-label="details"]')
+    expect(chevron().attributes('aria-expanded')).toBe('false')
+    expect(chevron().attributes('aria-controls')).toBeUndefined()
+    await chevron().trigger('click')
+    expect(chevron().attributes('aria-expanded')).toBe('true')
+    expect(rows()[0].find('.od-detail').attributes('id')).toBe(chevron().attributes('aria-controls'))
+  })
+
+  it('adds an operand slot at the first click, for an operation that takes any number', async () => {
+    mountSection({ ...DOCUMENT, data_items: [{ ...PEAK, operands: [], operation: '' }] })
+    await rows()[0].find('[aria-label="details"]').trigger('click')
+    expect(rows()[0].findAll('.od-operand')).toHaveLength(1)
+    await rows()[0].findAll('button').find((button) => button.text() === 'operand').trigger('click')
+    expect(rows()[0].findAll('.od-operand')).toHaveLength(2)
+    wrapper.findAllComponents(VariableCell).at(1).vm.$emit('update:modelValue', 'i_Na/i_Na')
+    expect(lastDocument().data_items[0].operands).toEqual(['i_Na/i_Na'])
+  })
+
+  it('keeps the selection on its item when a row above it is removed', async () => {
+    mountSection(DOCUMENT, { selected: 2 })
+    await rows()[0].find('[aria-label="remove"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[1]])
+    await wrapper.setProps({ selected: 0 })
+    await rows()[1].find('[aria-label="remove"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[1]])
+    await rows()[0].find('[aria-label="remove"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[1], [null]])
+  })
+
   it("selects a row when it is clicked, as the host's highlight follows", async () => {
     mountSection(DOCUMENT, { selected: 0 })
     expect(rows()[0].classes()).toContain('od-selected')
@@ -183,6 +214,14 @@ describe("DataItemsSection, PhLynx's preset", () => {
     expect(details).not.toContain('cost_type')
     expect(wrapper.find('[data-testid="od-preserved"]').exists()).toBe(true)
     expect(wrapper.emitted('update:document')).toBeUndefined()
+  })
+
+  it('tints the items CA refuses all the same, saying why, and names a plot_type of none', async () => {
+    mountSection({ ...DOCUMENT, data_items: [{ ...PEAK, std: 0, plot_type: 'None' }, { ...PEAK, data_item_name: 'V_mean', value: null }, PERIOD] }, { columns: 'phlynx' })
+    expect(rows().map((row) => row.classes('od-invalid'))).toEqual([true, true, false])
+    expect(rows()[0].find('.od-error').exists()).toBe(true)
+    await rows()[0].find('[aria-label="details"]').trigger('click')
+    expect(rows()[0].find('.od-detail').text()).toContain('plot_type (none)')
   })
 
   it('edits when the host says so, and says there are none', () => {

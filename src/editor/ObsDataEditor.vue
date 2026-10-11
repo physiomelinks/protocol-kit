@@ -133,10 +133,30 @@ function select(section, index) {
   if (hasProtocol.value && highlight.value.experiment != null) activeExp.value = highlight.value.experiment
 }
 
-// A new document is a new selection.
+// A document gaining or losing protocol_info clears the selection.
 watch(
   () => props.document == null || hasProtocol.value,
   () => (selection.value = null)
+)
+
+/**
+ * Counts the items of a section of the document.
+ *
+ * @param {'data'|'prediction'} section
+ * @returns {number}
+ */
+function countItems(section) {
+  if (!props.document) return 0
+  const items = section === 'data' ? readObsDataParts(props.document).dataItems : props.document.prediction_items
+  return Array.isArray(items) ? items.length : 0
+}
+
+// A document without the item selected (one undone, or replaced) clears the selection.
+watch(
+  () => props.document,
+  () => {
+    if (selection.value && selection.value.index >= countItems(selection.value.section)) selection.value = null
+  }
 )
 
 /** Passes an edited document on. */

@@ -321,10 +321,11 @@ one an error or warning names (whole, not as the start of a longer name) are alw
 **Data items.** `DataItemsSection` has CUFLynx's rows, `name | value | std | operation | exp | sub`, and under the
 chevron the operands (each labelled `x1`, `x2`... as CA's func names them, `time` among the variables), trace label,
 unit, weight, `cost_type` (the default named) and its kwargs, `plot_type`, the operation's kwargs (another item's name
-for an operation of no operands), source and comment. A row CA would refuse is tinted red and says why; one whose
-operation CA can't differentiate is tinted orange, with CUFLynx's warning. An item a row can't hold (a series, a
-frequency, a distribution, an operation the vocabulary hasn't) is kept as it is, and counted: "N non-editable item(s)
-(series / frequency / custom operation) will be preserved unchanged." Its columns are keys of `DATA_ITEM_COLUMNS`
+for an operation of no operands), source and comment. A row CA would refuse is tinted red and says why, read-only
+too; one whose operation CA can't differentiate is tinted orange, with CUFLynx's warning. An item a row can't hold (a
+series, a frequency, a distribution, an operation the vocabulary hasn't) is kept as it is, and counted: "N
+non-editable item(s) (series / frequency / custom operation) will be preserved unchanged." Its columns are keys of
+`DATA_ITEM_COLUMNS`
 (`name`, `value`, `std`, `operation`, `experiment`, `subexperiment`, `operands`, `traceName`, `unit`, `weight`, `cost`,
 `plot`, `operationKwargs`, `source`, `comment`, and `differentiable` for the tint), and the presets
 (`DATA_ITEM_COLUMN_PRESETS`) name them:
