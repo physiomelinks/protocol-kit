@@ -1,0 +1,229 @@
+/* The rows of the obs_data editor's sections, as CUFLynx's dialog draws them: a heading named by the raw key, a column
+   grid over a bordered list, details under a chevron, and tints for rows with errors, rows CA can't differentiate and
+   the row selected. Each section sets its grid with --od-columns. */
+
+.od-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.od-section {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.9rem;
+  color: var(--p-text-color, currentColor);
+}
+
+.od-head,
+.od-main {
+  display: grid;
+  grid-template-columns: var(--od-columns);
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.od-head {
+  padding: 0 0.3rem 0.25rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--p-text-muted-color, #64748b);
+}
+
+.od-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--p-content-border-color, #e2e8f0);
+  border-radius: 6px;
+}
+
+.od-list > li {
+  padding: 0.3rem;
+  border-top: 1px solid var(--p-content-border-color, #e2e8f0);
+}
+
+.od-list > li:first-child {
+  border-top: none;
+}
+
+.od-list > li.od-invalid {
+  background: color-mix(in srgb, var(--p-red-500, #ef4444) 12%, transparent);
+}
+
+/* An orange tint on a row whose operation CA can't differentiate; an error's tint wins. */
+.od-list > li.od-non-diff:not(.od-invalid) {
+  background: color-mix(in srgb, var(--p-orange-500, #f97316) 12%, transparent);
+}
+
+.od-list > li.od-selected {
+  box-shadow: inset 3px 0 0 0 var(--p-primary-color, #10b981);
+}
+
+.od-list > li.od-selected:not(.od-invalid) {
+  background: color-mix(in srgb, var(--p-primary-color, #10b981) 12%, transparent);
+}
+
+.od-main {
+  cursor: pointer;
+}
+
+.od-cell {
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.od-muted {
+  color: var(--p-text-muted-color, #64748b);
+}
+
+.od-rowbtns {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.od-warn,
+.od-error {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0.1rem 0.3rem 0.2rem;
+  font-size: 0.78rem;
+}
+
+.od-warn {
+  color: var(--p-orange-500, #f97316);
+}
+
+.od-error {
+  color: var(--p-red-500, #ef4444);
+}
+
+.od-warn .pi,
+.od-error .pi {
+  font-size: 0.72rem;
+}
+
+.od-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.2rem;
+  padding-left: 0.3rem;
+}
+
+.od-detail label,
+.od-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  font-size: 0.7rem;
+  color: var(--p-text-muted-color, #64748b);
+}
+
+.od-text {
+  color: var(--p-text-color, currentColor);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+/* Free text (source, comment) spans the details. */
+.od-wide {
+  grid-column: 1 / -1;
+}
+
+.od-list input:not([type='checkbox']),
+.od-list select,
+.od-list textarea,
+.od-value {
+  width: 100%;
+  min-width: 0;
+  height: 1.75rem;
+  box-sizing: border-box;
+  padding: 0 0.4rem;
+  border: 1px solid var(--p-content-border-color, #e2e8f0);
+  border-radius: 4px;
+  background: var(--p-content-background, #ffffff);
+  color: var(--p-text-color, currentColor);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.od-list textarea {
+  height: auto;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.4rem;
+  resize: vertical;
+}
+
+.od-list input:focus,
+.od-list select:focus,
+.od-list textarea:focus,
+.od-value:focus-visible {
+  outline: none;
+  border-color: var(--p-primary-color, #10b981);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--p-primary-color, #10b981) 20%, transparent);
+}
+
+/* A variable shown as a button that opens its search. */
+.od-value {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.od-operands {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.od-operand {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.od-operand > :last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.od-operand-name {
+  min-width: 1.2rem;
+  font-size: 0.7rem;
+  color: var(--p-text-muted-color, #64748b);
+}
+
+.od-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 1.1rem;
+  margin-right: 0.2rem;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+  border: 1px solid var(--p-content-border-color, #e2e8f0);
+  border-radius: 999px;
+  font-size: 0.65rem;
+  color: var(--p-text-muted-color, #64748b);
+}
+
+.od-empty {
+  font-size: 0.8rem;
+  color: var(--p-text-muted-color, #64748b);
+}
+
+.od-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--p-text-muted-color, #64748b);
+}

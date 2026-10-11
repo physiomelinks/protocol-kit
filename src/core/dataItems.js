@@ -5,6 +5,7 @@
  * so an item read and written back is the same but for its legacy keys, which are written as their replacements. Each
  * edit gives a new document, keeping everything it doesn't touch; the protocol_info is never changed.
  */
+import { DATA_ITEM_VOCABULARY } from './dataItemVocabulary.js'
 import { isMapping } from './protocolShapes.js'
 import { LEGACY_KEYS, readOperation } from './predictionValidation.js'
 
@@ -219,6 +220,21 @@ const listItems = (document) => (Array.isArray(document) ? document : isMapping(
  * @returns {Array<Object>} As readDataItem gives, with `index`, its place in data_items.
  */
 export const listDataItems = (document) => (Array.isArray(listItems(document)) ? listItems(document) : []).map((item, index) => ({ ...readDataItem(item), index }))
+
+/**
+ * Whether a row holds a data item, as CUFLynx's editor lists them: a constant of one value, with no operation or one the
+ * vocabulary has. A series, a frequency, a distribution, or an operation of the user's own is kept as it is.
+ *
+ * @param {Object} row - From listDataItems.
+ * @param {Object} [vocabulary] - As DATA_ITEM_VOCABULARY.
+ * @returns {boolean}
+ */
+export const isRowDataItem = (row, vocabulary = DATA_ITEM_VOCABULARY) =>
+  row.dataType === 'constant' &&
+  (!row.operation || vocabulary.operations.some(({ name }) => name === row.operation)) &&
+  !Array.isArray(row.value) &&
+  !Array.isArray(row.std) &&
+  !row.probDistParams
 
 /**
  * Gives every data item an experiment_idx and subexperiment_idx when any has one: CA reads a column some items lack

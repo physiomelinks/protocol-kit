@@ -688,7 +688,7 @@ export function validateDataItems(document, { vocabulary = DATA_ITEM_VOCABULARY 
   const dataNames = items.filter(isMapping).map((item) => item.data_item_name ?? item.variable).filter((name) => name != null).map(String)
   const nameError = checkItemNamesUnique(dataNames, predictionNames)
   if (nameError) sharedErrors.push(nameError)
-  // What CA refuses of the items together that it reads of each alone; the outputs editor shows the prediction items'.
+  // What CA refuses of the items together that it reads of each alone; the prediction items section shows the prediction items'.
   const isOfPredictions = wholeError?.startsWith('prediction_items') || wholeError?.startsWith("Duplicate 'data_item_name'")
   if (wholeError && isEachRead && !isOfPredictions) sharedErrors.push(wholeError)
   return { errors: [...itemErrors.flat(), ...sharedErrors], warnings: itemWarnings.flat(), itemErrors, itemWarnings, sharedErrors }

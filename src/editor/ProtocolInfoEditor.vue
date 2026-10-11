@@ -67,7 +67,7 @@
                 @update:model-value="(value) => edit(setTiming, { experiment: current, preTime: value })"
               />
             </div>
-            <div v-for="(sub, s) in experiment.subs" :key="`head-${s}`" class="column-head">
+            <div v-for="(sub, s) in experiment.subs" :key="`head-${s}`" class="column-head" :class="{ 'column-head--highlight': isHighlighted(s) }">
               <span class="column-title" :title="`Sub-experiment ${s + 1}`">{{ s + 1 }}</span>
               <InlineNumber
                 :model-value="sub.duration"
@@ -118,6 +118,7 @@
                   'lane-cell--clash': cell.isClash,
                   'lane-cell--error': cell.error,
                   'lane-cell--open': isEditing(lane.parameter, cell.sub),
+                  'lane-cell--highlight': isHighlighted(cell.sub),
                 }"
               >
                 <button
@@ -198,28 +199,6 @@
       </div>
     </div>
 
-    <ProtocolOutputsEditor
-      v-if="protocolInfo"
-      :document="document"
-      :variables="variables"
-      :dt="dt"
-      :confirm="confirm"
-      :palette="palette"
-      @update:document="emitDocument"
-    />
-
-    <ProtocolDataItemsEditor
-      v-if="showDataItems && document && (protocolInfo || hasDataItems)"
-      :document="document"
-      :variables="variables"
-      :confirm="confirm"
-      :palette="palette"
-      :columns="dataItemColumns"
-      :read-only="dataItemsReadOnly"
-      :vocabulary="dataItemVocabulary"
-      @update:document="emitDocument"
-    />
-
     <Menu ref="kindMenu" :model="kindMenuItems" popup>
       <template #item="{ item, props: itemProps }">
         <a v-bind="itemProps.action" class="kind-item" :class="{ 'kind-item--current': item.isCurrent }">
@@ -258,11 +237,11 @@
 
 <script setup>
 /**
- * Edits a protocol as circulatory autogen and CUFLynx write it, in an obs_data document. Its experiments are listed
- * beside a timeline of the one shown: a column for the warm-up and for each sub-experiment, as wide as it is long,
- * and a lane for each parameter drawing how it varies. A segment opens the editor of how it varies there. Below,
- * the outputs the experiments record (see ProtocolOutputsEditor), then the data items measured (see
- * ProtocolDataItemsEditor), shown with the columns the host chooses.
+ * Edits the protocol_info of an obs_data document, as circulatory autogen and CUFLynx write it. Its experiments are
+ * listed beside a timeline of the one shown (`v-model:activeExp`): a column for the warm-up and for each
+ * sub-experiment, as wide as it is long, and a lane for each parameter drawing how it varies. A segment opens the
+ * editor of how it varies there. The sub-experiment of an item selected elsewhere is tinted (`highlightExp`,
+ * `highlightSubexp`), as in CUFLynx's dialog.
  *
  * The host gives its model's variables, and optionally how to read their values, ask before removing, and colour
  * experiments; it needs nothing else of the host's own.
@@ -280,12 +259,9 @@ import { PrimeVueConfirmSymbol } from 'primevue/useconfirm'
 
 import InlineNumber from './InlineNumber.vue'
 import ProtocolCellEditor from './ProtocolCellEditor.vue'
-import ProtocolDataItemsEditor from './ProtocolDataItemsEditor.vue'
-import ProtocolOutputsEditor from './ProtocolOutputsEditor.vue'
 import { INPUT_KINDS, findInputKind } from './protocolKinds.js'
 import VariablePicker from './VariablePicker.vue'
 import { isSettable } from './variableSearch.js'
-import { DATA_ITEM_VOCABULARY } from '../core/dataItemVocabulary.js'
 import { EXPERIMENT_PALETTE, resolveExperimentColour } from '../core/experimentColours.js'
 import { readObsDataParts } from '../core/obsDataDocument.js'
 import { findCircAutogenLimits } from '../core/protocolCompatibility.js'
@@ -332,26 +308,28 @@ const props = defineProps({
   palette: { type: Array, default: () => EXPERIMENT_PALETTE },
   // The host's own warnings about a protocol_info, after the editor's: `(protocolInfo) => string[]`.
   warn: { type: Function, default: null },
-  // The time between the samples a run records, to check that each output's range takes some.
-  dt: { type: Number, default: null },
-  // Whether to show the data items, which the host may leave to its own settings.
-  showDataItems: { type: Boolean, default: true },
-  // The data items' columns: 'all', 'summary' (name, variable, experiment, sub-experiment, read-only), or a list of
-  // their keys (DATA_ITEM_COLUMNS).
-  dataItemColumns: { type: [String, Array], default: 'all' },
-  // Whether the data items are only listed; by default, when their columns are only the summary's.
-  dataItemsReadOnly: { type: Boolean, default: null },
-  // The operations, cost funcs, data and plot types the data items offer, as DATA_ITEM_VOCABULARY.
-  dataItemVocabulary: { type: Object, default: () => DATA_ITEM_VOCABULARY },
+  // The experiment shown (`v-model:activeExp`); the editor keeps its own when the host gives none.
+  activeExp: { type: Number, default: null },
+  // The experiment and sub-experiment of an item selected elsewhere, tinted while that experiment is shown; a null
+  // highlightExp tints the sub-experiment in every experiment.
+  highlightExp: { type: Number, default: null },
+  highlightSubexp: { type: Number, default: null },
 })
-const emit = defineEmits(['update:document'])
+const emit = defineEmits(['update:document', 'update:activeExp'])
 const confirmService = inject(PrimeVueConfirmSymbol, null)
 
-const selected = ref(0)
+const ownExperiment = ref(0)
+// The experiment shown, as the host says, else the editor's own; choosing one tells the host.
+const selected = computed({
+  get: () => props.activeExp ?? ownExperiment.value,
+  set: (experiment) => {
+    ownExperiment.value = experiment
+    emit('update:activeExp', experiment)
+  },
+})
 const variablesByName = computed(() => new Map(props.variables.map((variable) => [variable.name, variable])))
 const unitsByPath = computed(() => new Map(props.variables.map((variable) => [variable.name, variable.unit ?? ''])))
 const protocolInfo = computed(() => (props.document ? readObsDataParts(props.document).protocolInfo : null))
-const hasDataItems = computed(() => !!props.document && readObsDataParts(props.document).dataItems.length > 0)
 const validation = computed(() => {
   if (!protocolInfo.value) return { errors: [], warnings: [] }
   const checked = validateProtocolInfo(protocolInfo.value)
@@ -366,6 +344,14 @@ const current = computed(() => Math.min(selected.value, view.value.experiments.l
 const experiment = computed(() => view.value.experiments[current.value])
 const colour = computed(() => colourOf(experiment.value, current.value))
 const setParameters = computed(() => new Set(view.value.controls.map(({ parameter }) => parameter)))
+
+/**
+ * Whether a sub-experiment of the experiment shown is the one an item selected elsewhere is in.
+ *
+ * @param {number} sub
+ * @returns {boolean}
+ */
+const isHighlighted = (sub) => props.highlightSubexp != null && sub === props.highlightSubexp && (props.highlightExp == null || props.highlightExp === current.value)
 
 // The warm-up, then each sub-experiment as wide as it is long, then the column to add one; lanes are named above.
 const columns = computed(() => {
@@ -1117,6 +1103,11 @@ function alignCell() {
 .lane-cell:hover,
 .lane-cell--open {
   border-color: color-mix(in srgb, var(--p-primary-color, #10b981) 60%, transparent);
+}
+
+.column-head--highlight,
+.lane-cell--highlight {
+  background: color-mix(in srgb, var(--p-primary-color, #10b981) 12%, transparent);
 }
 
 .lane-cell--warm-up {

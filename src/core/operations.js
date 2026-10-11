@@ -1,5 +1,5 @@
 /**
- * Computes the operations an output can take as circulatory_autogen's own funcs do (operation_funcs.py,
+ * Computes the operations a feature can take as circulatory_autogen's own funcs do (operation_funcs.py,
  * operation_funcs_user.py, numpy's math backend): the same samples, the same NaNs and errors, and means summed in
  * numpy's order, so each value is the one CA gives, to the last bit.
  */
@@ -139,19 +139,33 @@ function readIndex(fraction, last) {
 }
 
 /**
- * Takes the samples `x[int(start_frac * (n - 1)):int(end_frac * (n - 1))]` as Python slices them: a negative index
- * counts from the end, and an index past either end stops there.
+ * Finds the samples `x[int(start_frac * (n - 1)):int(end_frac * (n - 1))]` takes of n, as Python slices them: a
+ * negative index counts from the end, and an index past either end stops there. A host draws a feature over them.
+ *
+ * @param {number} count - n.
+ * @param {Object} [kwargs] - With start_frac and end_frac, as numbers or as an item's operation_kwargs has them; CA's
+ *   defaults are 0 and 1.
+ * @returns {{start: number, end: number}} The first sample's index, and the one after the last; equal when it takes
+ *   none.
+ * @throws {OperationError} For a fraction Python can't read as an index.
+ */
+export function sliceRangeBounds(count, { start_frac: startFrac = 0, end_frac: endFrac = 1 } = {}) {
+  const clamp = (index) => Math.min(Math.max(index < 0 ? index + count : index, 0), count)
+  const start = clamp(readIndex(startFrac, count - 1))
+  const end = clamp(readIndex(endFrac, count - 1))
+  return { start, end: Math.max(start, end) }
+}
+
+/**
+ * Takes the samples `x[int(start_frac * (n - 1)):int(end_frac * (n - 1))]`, as sliceRangeBounds finds them.
  *
  * @param {ArrayLike<number>} values
  * @param {Object} kwargs - With start_frac and end_frac; CA's defaults are 0 and 1.
  * @returns {ArrayLike<number>}
  */
-export function sliceRange(values, { start_frac: startFrac = 0, end_frac: endFrac = 1 } = {}) {
-  const count = values.length
-  const clamp = (index) => Math.min(Math.max(index < 0 ? index + count : index, 0), count)
-  const start = clamp(readIndex(startFrac, count - 1))
-  const end = clamp(readIndex(endFrac, count - 1))
-  return Array.prototype.slice.call(values, start, Math.max(start, end))
+export function sliceRange(values, kwargs = {}) {
+  const { start, end } = sliceRangeBounds(values.length, kwargs)
+  return Array.prototype.slice.call(values, start, end)
 }
 
 /**
@@ -165,17 +179,73 @@ const inRange =
   (values, kwargs = {}) =>
     reduce(sliceRange(values, kwargs))
 
-// The operations, by CA's names: each takes the series and its keyword arguments, and the keyword arguments each
-// accepts.
+/**
+ * Reads a peak's least height as scipy's find_peaks takes `height`: none, or a number (a bool as 0 or 1). A list,
+ * which numpy reads as each peak's own, isn't.
+ *
+ * @param {*} height
+ * @returns {number|null}
+ * @throws {OperationError} For another, which numpy can't compare with the heights, and a list.
+ */
+function readHeight(height) {
+  if (height == null) return null
+  if (typeof height === 'number' || typeof height === 'boolean') return Number(height)
+  throw new OperationError(`spike_min_thresh must be a number, got ${formatPythonRepr(height)}.`, 'TypeError')
+}
+
+/**
+ * Finds the first peak of values as scipy's find_peaks does: a sample above the one before, and above the one after
+ * once past any run of equal samples, a run's peak its middle (rounded down); the first and last samples are never
+ * peaks. Of those, the first at least as high as `least`.
+ *
+ * @param {ArrayLike<number>} values
+ * @param {number|null} least
+ * @returns {number} Its index, or -1 for none.
+ */
+function findFirstPeak(values, least) {
+  const last = values.length - 1
+  for (let index = 1; index < last; index++) {
+    if (!(values[index - 1] < values[index])) continue
+    let ahead = index + 1
+    while (ahead < last && values[ahead] === values[index]) ahead++
+    if (values[ahead] < values[index]) {
+      const peak = Math.trunc((index + ahead - 1) / 2)
+      if (least === null || least <= values[peak]) return peak
+      index = ahead
+    }
+  }
+  return -1
+}
+
+/**
+ * The time of the first peak, as CA's first_peak_time gives it: of the sub-experiment's own time, so from the start
+ * of its pre_time; its last time when there is no peak.
+ *
+ * @param {ArrayLike<number>} times
+ * @param {ArrayLike<number>} values
+ * @param {Object} [kwargs] - With spike_min_thresh, the least height of a peak.
+ * @returns {number}
+ * @throws {OperationError} For a peak past the times, or no times, as indexing them raises.
+ */
+function computeFirstPeakTime(times, values, { spike_min_thresh: height = null } = {}) {
+  const peak = findFirstPeak(values, readHeight(height))
+  const index = peak < 0 ? times.length - 1 : peak
+  if (index < 0 || index >= times.length) throw new OperationError(`index ${peak < 0 ? -1 : index} is out of bounds for axis 0 with size ${times.length}`, 'IndexError')
+  return times[index]
+}
+
+// The operations, by CA's names: each takes its operands' series and its keyword arguments, the operands it reads, by
+// CA's names for them, and the keyword arguments it accepts.
 const OPERATIONS = {
-  max: { compute: computeMax, kwargs: [] },
-  min: { compute: computeMin, kwargs: [] },
-  mean: { compute: computeMean, kwargs: [] },
-  max_minus_min: { compute: computeMaxMinusMin, kwargs: [] },
-  max_in_range: { compute: inRange(computeMax), kwargs: ['start_frac', 'end_frac'] },
-  min_in_range: { compute: inRange(computeMin), kwargs: ['start_frac', 'end_frac'] },
-  mean_in_range: { compute: inRange(computeMean), kwargs: ['start_frac', 'end_frac'] },
-  max_minus_min_in_range: { compute: inRange(computeMaxMinusMin), kwargs: ['start_frac', 'end_frac'] },
+  max: { compute: computeMax, operands: ['x'], kwargs: [] },
+  min: { compute: computeMin, operands: ['x'], kwargs: [] },
+  mean: { compute: computeMean, operands: ['x'], kwargs: [] },
+  max_minus_min: { compute: computeMaxMinusMin, operands: ['x'], kwargs: [] },
+  max_in_range: { compute: inRange(computeMax), operands: ['x'], kwargs: ['start_frac', 'end_frac'] },
+  min_in_range: { compute: inRange(computeMin), operands: ['x'], kwargs: ['start_frac', 'end_frac'] },
+  mean_in_range: { compute: inRange(computeMean), operands: ['x'], kwargs: ['start_frac', 'end_frac'] },
+  max_minus_min_in_range: { compute: inRange(computeMaxMinusMin), operands: ['x'], kwargs: ['start_frac', 'end_frac'] },
+  first_peak_time: { compute: computeFirstPeakTime, operands: ['t', 'V'], kwargs: ['spike_min_thresh'] },
 }
 export const COMPUTED_OPERATIONS = Object.keys(OPERATIONS)
 
@@ -193,11 +263,13 @@ export const isComputedOperation = (operation) => typeof operation === 'string' 
  * @param {string} operation
  * @param {Object} kwargs
  * @param {string} name - The item's data_item_name.
+ * @param {number} count - The operands given, which fill its first arguments.
  * @throws {OperationError} With CA's message, but for its "Did you mean" hint.
  */
-function checkKwargs(operation, kwargs, name) {
+function checkKwargs(operation, kwargs, name, count) {
   const where = `data_item '${name}'`
-  const accepted = OPERATIONS[operation].kwargs
+  const { operands, kwargs: accepted } = OPERATIONS[operation]
+  const filled = operands.slice(0, count)
   for (const key of Object.keys(kwargs)) {
     if (RESERVED_KWARGS.includes(key)) {
       throw new OperationError(
@@ -205,16 +277,16 @@ function checkKwargs(operation, kwargs, name) {
           `'${operation}' and must not be given in obs_data.json. Remove it from 'operation_kwargs'.`
       )
     }
-    if (key === 'x') {
+    if (filled.includes(key)) {
       throw new OperationError(
-        `Invalid 'operation_kwargs' key 'x' in ${where}: the operation func '${operation}' already receives 'x' positionally from the ` +
-          `data_item's 'operands' (operands fill ['x']). Remove 'x' from 'operation_kwargs', or remove the corresponding entry from 'operands'.`
+        `Invalid 'operation_kwargs' key '${key}' in ${where}: the operation func '${operation}' already receives '${key}' positionally from the ` +
+          `data_item's 'operands' (operands fill ${formatPythonRepr(filled)}). Remove '${key}' from 'operation_kwargs', or remove the corresponding entry from 'operands'.`
       )
     }
-    if (!accepted.includes(key)) {
+    if (!accepted.includes(key) && !operands.includes(key)) {
       throw new OperationError(
         `Invalid 'operation_kwargs' key '${key}' in ${where}: the operation func '${operation}' has no keyword argument '${key}'. ` +
-          `Accepted keyword arguments are: ${formatPythonRepr([...accepted, 'x'].sort())}. Fix the key in the data_item's ` +
+          `Accepted keyword arguments are: ${formatPythonRepr([...accepted, ...operands].sort())}. Fix the key in the data_item's ` +
           `'operation_kwargs' in obs_data.json, or add '${key}' as a keyword argument of '${operation}'.`
       )
     }
@@ -223,7 +295,7 @@ function checkKwargs(operation, kwargs, name) {
 
 /**
  * Applies an operation to an item's operands, as CA's evaluate_feature does: its operation_kwargs checked, those that
- * name an earlier item replaced by its value, then the operation over its one operand.
+ * name an earlier item replaced by its value, then the operation over its operands.
  *
  * @param {string} operation - One of COMPUTED_OPERATIONS.
  * @param {Array<ArrayLike<number>>} operands - Each operand's samples over the sub-experiment.
@@ -231,14 +303,15 @@ function checkKwargs(operation, kwargs, name) {
  * @param {Object} [options]
  * @param {string} [options.name] - The item's data_item_name, for messages.
  * @param {Map<string, number>} [options.computed] - The values of the items computed before it, by name.
- * @param {Set<string>} [options.itemNames] - Every prediction item's name: one not yet computed can't be used.
+ * @param {Set<string>} [options.itemNames] - Every item's name: one not yet computed can't be used.
+ * @param {string} [options.kind] - What the item is, for messages: 'prediction item' or 'data item'.
  * @returns {number}
  * @throws {OperationError} Where CA raises.
  */
-export function applyOperation(operation, operands, kwargs = {}, { name = 'item', computed = new Map(), itemNames = new Set() } = {}) {
-  if (!isComputedOperation(operation)) throw new OperationError(`prediction item '${name}': operation ${formatPythonRepr(operation)} is not one protocol-kit computes.`)
+export function applyOperation(operation, operands, kwargs = {}, { name = 'item', computed = new Map(), itemNames = new Set(), kind = 'prediction item' } = {}) {
+  if (!isComputedOperation(operation)) throw new OperationError(`${kind} '${name}': operation ${formatPythonRepr(operation)} is not one protocol-kit computes.`)
   const raw = kwargs && typeof kwargs === 'object' && !Array.isArray(kwargs) ? kwargs : {}
-  checkKwargs(operation, raw, name)
+  checkKwargs(operation, raw, name, operands.length)
   const resolved = {}
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value === 'string' && computed.has(value)) resolved[key] = computed.get(value)
@@ -249,8 +322,9 @@ export function applyOperation(operation, operands, kwargs = {}, { name = 'item'
       )
     } else resolved[key] = value
   }
-  if (operands.length !== 1) {
-    throw new OperationError(`prediction item '${name}': ${operation} takes one operand, got ${operands.length}.`, 'TypeError')
+  const count = OPERATIONS[operation].operands.length
+  if (operands.length !== count) {
+    throw new OperationError(`${kind} '${name}': ${operation} takes ${count === 1 ? 'one operand' : `${count} operands`}, got ${operands.length}.`, 'TypeError')
   }
-  return OPERATIONS[operation].compute(operands[0], resolved)
+  return OPERATIONS[operation].compute(...operands, resolved)
 }

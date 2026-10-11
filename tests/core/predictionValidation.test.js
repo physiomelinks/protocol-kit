@@ -75,10 +75,10 @@ describe('validatePredictionItems', () => {
 describe('findPredictionItemLimits', () => {
   it('names the items that need circulatory_autogen #536', () => {
     expect(findPredictionItemLimits(readFixture('prediction_items_536_obs_data.json'))).toEqual([
-      '5 outputs use an operation or a sub-experiment (i_Na_holding, I_peak_e0, I_peak_e1, V_step_e1, I_late_e1), so it needs circulatory_autogen with #536; ' +
+      '5 prediction items use an operation or a sub-experiment (i_Na_holding, I_peak_e0, I_peak_e1, V_step_e1, I_late_e1), so it needs circulatory_autogen with #536; ' +
         'released libcuflynx 0.7.3 and current CUFLynx reject this file.',
     ])
-    expect(findPredictionItemLimits({ prediction_items: [{ data_item_name: 'a', subexperiment_idx: 0 }] })[0]).toMatch(/^An output uses an operation or a sub-experiment \(a\)/)
+    expect(findPredictionItemLimits({ prediction_items: [{ data_item_name: 'a', subexperiment_idx: 0 }] })[0]).toMatch(/^A prediction item uses an operation or a sub-experiment \(a\)/)
     expect(findPredictionItemLimits(readFixture('SN_simple_obs_data.json'))).toEqual([])
     expect(findPredictionItemLimits(null)).toEqual([])
   })

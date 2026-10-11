@@ -7,7 +7,7 @@ import ConfirmationService from 'primevue/confirmationservice'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { EXPERIMENT_PALETTE } from '../../src/core/experimentColours.js'
-import { ProtocolCellEditor, ProtocolEditor, VariablePicker } from '../../src/editor/index.js'
+import { ProtocolCellEditor, ProtocolInfoEditor, VariablePicker } from '../../src/editor/index.js'
 
 const RESOURCES = join(__dirname, '../resources')
 const readFixture = (fileName) => JSON.parse(readFileSync(join(RESOURCES, fileName), 'utf8'))
@@ -47,7 +47,7 @@ const stubBrowserConfirm = (answer) => (window.confirm = vi.fn(() => answer))
  * @returns {import('@vue/test-utils').VueWrapper}
  */
 function mountEditor(document, props = {}, plugins = []) {
-  wrapper = mount(ProtocolEditor, {
+  wrapper = mount(ProtocolInfoEditor, {
     props: { document, variables: VARIABLES, ...props },
     global: { plugins: [PrimeVue, ...plugins] },
     attachTo: globalThis.document.body,
@@ -62,7 +62,7 @@ function mountEditor(document, props = {}, plugins = []) {
  */
 const emittedDocuments = () => (wrapper.emitted('update:document') ?? []).map(([edited]) => edited)
 
-describe('ProtocolEditor', () => {
+describe('ProtocolInfoEditor', () => {
   it('shows a br-1977 document: its experiment, its colour, and a lane for the parameter it paces', () => {
     mountEditor(readFixture('br-1977_obs_data.json'))
     const experiment = wrapper.find('.rail-item')
@@ -214,7 +214,36 @@ describe('ProtocolEditor', () => {
   })
 })
 
-describe('ProtocolEditor, parameters at their model values', () => {
+describe('ProtocolInfoEditor, the experiment shown and the sub-experiment highlighted', () => {
+  it('shows the experiment the host says (v-model:activeExp), and tells it of the one chosen', async () => {
+    mountEditor(readFixture('prediction_items_536_obs_data.json'), { activeExp: 1 })
+    expect(wrapper.findAll('.rail-item').map((item) => item.attributes('aria-pressed'))).toEqual(['false', 'true'])
+    await wrapper.findAll('.rail-item')[0].trigger('click')
+    expect(wrapper.emitted('update:activeExp')).toEqual([[0]])
+    await wrapper.setProps({ activeExp: 0 })
+    expect(wrapper.findAll('.rail-item').map((item) => item.attributes('aria-pressed'))).toEqual(['true', 'false'])
+  })
+
+  it("keeps the experiment chosen when the host doesn't say", async () => {
+    mountEditor(readFixture('prediction_items_536_obs_data.json'))
+    await wrapper.findAll('.rail-item')[1].trigger('click')
+    expect(wrapper.findAll('.rail-item').map((item) => item.attributes('aria-pressed'))).toEqual(['false', 'true'])
+  })
+
+  it("tints the sub-experiment highlighted, only in its own experiment's timeline", async () => {
+    mountEditor(readFixture('prediction_items_536_obs_data.json'), { activeExp: 1, highlightExp: 1, highlightSubexp: 0 })
+    const tinted = () => wrapper.findAll('.column-head').map((head) => head.classes('column-head--highlight'))
+    // The warm-up's head, then each sub-experiment's.
+    expect(tinted()).toEqual([false, true, false])
+    expect(wrapper.findAll('.lane-cell--highlight').length).toBeGreaterThan(0)
+    await wrapper.setProps({ activeExp: 0 })
+    expect(tinted()).not.toContain(true)
+    await wrapper.setProps({ highlightExp: null, highlightSubexp: 1 })
+    expect(tinted()).toEqual([false, false, true])
+  })
+})
+
+describe('ProtocolInfoEditor, parameters at their model values', () => {
   // Two sub-experiments: V_clamp steps, the others stay at the model's values (g_K's read from a string).
   const atModelValues = () => ({
     protocol_info: {

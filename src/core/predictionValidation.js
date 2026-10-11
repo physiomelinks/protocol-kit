@@ -1,6 +1,6 @@
 /**
  * Checks an obs_data document's prediction_items as circulatory_autogen #536 does on reading it (PrimitiveParsers.py),
- * in the same order and with the same messages, then the ranges of the operations an output can take.
+ * in the same order and with the same messages, then the ranges of the operations it takes.
  */
 import { formatPythonList, formatPythonRepr, formatPythonStr, getPythonTypeName } from './pythonFormat.js'
 import { isMapping } from './protocolShapes.js'
@@ -412,7 +412,7 @@ export function findPredictionItemLimits(document) {
   const names = items.filter((item) => isMapping(item) && NEEDS_536.some((key) => Object.hasOwn(item, key))).map((item) => item.data_item_name ?? '(unnamed)')
   if (!names.length) return []
   return [
-    `${names.length === 1 ? 'An output uses' : `${names.length} outputs use`} an operation or a sub-experiment (${names.join(', ')}), ` +
+    `${names.length === 1 ? 'A prediction item uses' : `${names.length} prediction items use`} an operation or a sub-experiment (${names.join(', ')}), ` +
       'so it needs circulatory_autogen with #536; released libcuflynx 0.7.3 and current CUFLynx reject this file.',
   ]
 }

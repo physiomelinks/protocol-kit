@@ -3,27 +3,49 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { addOutput, findOutputKey, isValidationData, listOutputs, removeOutput, updateOutput } from '../../src/core/predictionItems.js'
-import { findObservationsAt, moveExperiment, removeExperiment, removeSubExperiment, addSubExperiment } from '../../src/core/protocolEditing.js'
+import { parseObsData, serialiseObsData } from '../../src/core/obsDataDocument.js'
+import {
+  addPredictionItem,
+  buildPredictionItem,
+  createPredictionItem,
+  findFreeItemName,
+  isValidationData,
+  listPredictionItems,
+  readPredictionItemRow,
+  removePredictionItem,
+  updatePredictionItem,
+} from '../../src/core/predictionItems.js'
+import { addSubExperiment, findObservationsAt, moveExperiment, removeExperiment, removeSubExperiment } from '../../src/core/protocolEditing.js'
 import { readPredictionItemsAsCircAutogen, validatePredictionItems } from '../../src/core/predictionValidation.js'
 
 const RESOURCES = join(__dirname, '../resources')
-const readFixture = (fileName) => JSON.parse(readFileSync(join(RESOURCES, fileName), 'utf8'))
+const readText = (fileName) => readFileSync(join(RESOURCES, fileName), 'utf8')
+const readFixture = (fileName) => JSON.parse(readText(fileName))
 
-// The peak sodium current early in each step, as the editor writes it.
-const I_PEAK = {
-  name: 'I_peak',
-  operands: ['i_Na/i_Na'],
-  unit: 'uA_per_cm2',
-  experiments: [0, 1],
-  subexperiment: 1,
-  operation: 'min_in_range',
-  operationKwargs: { start_frac: 0, end_frac: 0.2 },
-  traceName: 'Sodium current',
-}
 const DOCUMENT = {
   protocol_info: { pre_times: [0, 0, 0], sim_times: [[1, 2], [3, 4], [5]], params_to_change: {}, experiment_labels: ['Control', 'Half g_Na', ' Wash-out!'] },
   data_items: [{ data_item_name: 'V_rest', data_type: 'constant', unit: 'mV', operands: ['membrane/V'], value: -80, std: 1 }],
+}
+// An output as protocol-kit 0.2 to 0.4 wrote it: one item per experiment, sharing item_name_for_plotting.
+const peak = (name, experiment) => ({
+  data_item_name: name,
+  operands: ['i_Na/i_Na'],
+  unit: 'uA_per_cm2',
+  operation: 'min_in_range',
+  operation_kwargs: { start_frac: 0, end_frac: 0.2 },
+  experiment_idx: experiment,
+  subexperiment_idx: 1,
+  item_name_for_plotting: 'I_peak',
+  trace_name_for_plotting: 'Sodium current',
+})
+const OUTPUTS_DOCUMENT = {
+  ...DOCUMENT,
+  prediction_items: [
+    peak('I_peak_Control', 0),
+    peak('I_peak_Half_g_Na', 1),
+    { data_item_name: 'V_rest_2', operands: ['membrane/V'], unit: 'mV', experiment_idx: 2, item_name_for_plotting: 'V_rest' },
+    { data_item_name: 'I_late', operands: ['i_Na/i_Na'], unit: 'uA_per_cm2', operation: 'max', experiment_idx: 1, data_type: 'constant', value: -0.5, std: 0.1 },
+  ],
 }
 
 /**
@@ -34,238 +56,198 @@ const DOCUMENT = {
  */
 const placesOf = (document) => document.prediction_items.map((item) => [item.data_item_name, item.experiment_idx, item.subexperiment_idx])
 
-describe('addOutput', () => {
-  it('writes one item per experiment, named with its label, as CA #536 reads it', () => {
-    const before = JSON.stringify(DOCUMENT)
-    const edited = addOutput(DOCUMENT, I_PEAK)
-    expect(JSON.stringify(DOCUMENT)).toBe(before)
-    expect(edited.prediction_items).toEqual([
-      {
-        data_item_name: 'I_peak_Control',
-        operands: ['i_Na/i_Na'],
-        unit: 'uA_per_cm2',
-        operation: 'min_in_range',
-        operation_kwargs: { start_frac: 0, end_frac: 0.2 },
-        experiment_idx: 0,
-        subexperiment_idx: 1,
-        item_name_for_plotting: 'I_peak',
-        trace_name_for_plotting: 'Sodium current',
-      },
-      { ...edited.prediction_items[0], data_item_name: 'I_peak_Half_g_Na', experiment_idx: 1 },
-    ])
-    expect(edited.protocol_info).toEqual(DOCUMENT.protocol_info)
-    expect(edited.data_items).toEqual(DOCUMENT.data_items)
+describe('readPredictionItemRow', () => {
+  it("reads an item as CUFLynx's row: its variable, unit, labels, experiment and sub-experiment, and operation", () => {
+    expect(readPredictionItemRow(peak('I_peak_Control', 0))).toEqual({
+      name: 'I_peak_Control',
+      operands: ['i_Na/i_Na'],
+      unit: 'uA_per_cm2',
+      traceName: 'Sodium current',
+      itemName: 'I_peak',
+      experiment: 0,
+      subexperiment: 1,
+      operation: 'min_in_range',
+      operationKwargs: { start_frac: 0, end_frac: 0.2 },
+      isValidationData: false,
+      original: peak('I_peak_Control', 0),
+    })
+  })
+
+  it('reads the last sub-experiment as null, no operation as empty, legacy keys as their replacements, and held-out data', () => {
+    const row = readPredictionItemRow({ variable: 'membrane/V', name_for_plotting: 'Voltage', unit: 'mV', operation: 'None', value: [1, 2], std: 0.5 })
+    expect(row).toMatchObject({ name: 'membrane/V', operands: ['membrane/V'], traceName: 'Voltage', experiment: 0, subexperiment: null, operation: '', isValidationData: true })
+    expect(isValidationData({ data_type: 'series' })).toBe(true)
+    expect(isValidationData({ data_item_name: 'a' })).toBe(false)
+  })
+})
+
+describe('buildPredictionItem', () => {
+  it('writes a new item whole, in the order CA #536 reads it, with no kwargs for none or an operation spelled as none', () => {
+    const item = buildPredictionItem({ ...createPredictionItem({ experiment: 1 }), name: 'I_peak', operands: ['i_Na/i_Na', ''], unit: 'uA_per_cm2', subexperiment: 1, operation: 'max', itemName: 'Peak', traceName: 'I_Na' })
+    expect(item).toEqual({ data_item_name: 'I_peak', operands: ['i_Na/i_Na'], unit: 'uA_per_cm2', operation: 'max', experiment_idx: 1, subexperiment_idx: 1, item_name_for_plotting: 'Peak', trace_name_for_plotting: 'I_Na' })
+    expect(Object.keys(item)).toEqual(['data_item_name', 'operands', 'unit', 'operation', 'experiment_idx', 'subexperiment_idx', 'item_name_for_plotting', 'trace_name_for_plotting'])
+    const trace = buildPredictionItem({ ...createPredictionItem(), name: 'V', operands: ['m/V'], operationKwargs: { start_frac: 0 } })
+    expect(trace).toEqual({ data_item_name: 'V', operands: ['m/V'], unit: 'dimensionless', experiment_idx: 0 })
+  })
+
+  it('writes an item read back as it was, held-out data and keys it does not know of included', () => {
+    const item = { ...peak('I_late', 1), data_type: 'constant', value: -0.5, std: 0.1, x_note: 'kept' }
+    expect(buildPredictionItem(readPredictionItemRow(item))).toEqual(item)
+    expect(JSON.stringify(buildPredictionItem({ ...readPredictionItemRow(item), unit: 'nA' }))).toBe(JSON.stringify({ ...item, unit: 'nA' }))
+  })
+
+  it('writes legacy keys as their replacements, in their place, and the operands CA requires', () => {
+    const item = buildPredictionItem(readPredictionItemRow({ variable: 'membrane/V', unit: 'mV', name_for_plotting: 'Voltage' }))
+    expect(item).toEqual({ data_item_name: 'membrane/V', unit: 'mV', trace_name_for_plotting: 'Voltage', operands: ['membrane/V'] })
+  })
+
+  it('drops the kwargs with the operation, and the sub-experiment for the last', () => {
+    const item = buildPredictionItem({ ...readPredictionItemRow(peak('a', 0)), operation: '', subexperiment: null })
+    expect(item).not.toHaveProperty('operation')
+    expect(item).not.toHaveProperty('operation_kwargs')
+    expect(item).not.toHaveProperty('subexperiment_idx')
+  })
+})
+
+describe('findFreeItemName', () => {
+  it('gives a name no data or prediction item has, with _2, _3...', () => {
+    const document = { ...DOCUMENT, prediction_items: [{ data_item_name: 'V' }, { data_item_name: 'V_2' }] }
+    expect(findFreeItemName(document, 'I')).toBe('I')
+    expect(findFreeItemName(document, 'V')).toBe('V_3')
+    expect(findFreeItemName(document, 'V_rest')).toBe('V_rest_2')
+    // An item's own name is free for it.
+    expect(findFreeItemName(document, 'V_2', 1)).toBe('V_2')
+    expect(findFreeItemName([{ data_item_name: 'a' }], 'a')).toBe('a_2')
+  })
+})
+
+describe('addPredictionItem', () => {
+  it('adds an item after the others, leaving the document given and the rest as they were', () => {
+    const before = JSON.stringify(OUTPUTS_DOCUMENT)
+    const edited = addPredictionItem(OUTPUTS_DOCUMENT, { ...createPredictionItem(), name: 'V', operands: ['membrane/V'], unit: 'mV' })
+    expect(JSON.stringify(OUTPUTS_DOCUMENT)).toBe(before)
+    expect(edited.prediction_items.slice(0, 4)).toEqual(OUTPUTS_DOCUMENT.prediction_items)
+    expect(edited.prediction_items[4]).toEqual({ data_item_name: 'V', operands: ['membrane/V'], unit: 'mV', experiment_idx: 0 })
     expect(readPredictionItemsAsCircAutogen(edited).error).toBeNull()
   })
 
-  it('names an item for one experiment as the output, and never as another item', () => {
-    const trace = { name: 'V_rest', operands: ['membrane/V'], unit: 'mV', experiments: [2] }
-    let edited = addOutput(DOCUMENT, trace)
-    // A trace: no operation, and over the experiment's last sub-experiment.
-    expect(edited.prediction_items).toEqual([{ data_item_name: 'V_rest_2', operands: ['membrane/V'], unit: 'mV', experiment_idx: 2, item_name_for_plotting: 'V_rest' }])
-    edited = addOutput(edited, trace)
-    expect(edited.prediction_items.map((item) => item.data_item_name)).toEqual(['V_rest_2', 'V_rest_3'])
+  it('names an unnamed item after its variable, apart from every other item, as CA requires', () => {
+    let edited = addPredictionItem(DOCUMENT, { ...createPredictionItem(), operands: ['membrane/V'] })
+    edited = addPredictionItem(edited, { ...createPredictionItem(), operands: ['membrane/V'] })
+    expect(edited.prediction_items.map((item) => item.data_item_name)).toEqual(['membrane/V', 'membrane/V_2'])
+    // Without a variable it stays unnamed, for CA's error to say so.
+    expect(addPredictionItem(null, createPredictionItem()).prediction_items).toEqual([{ data_item_name: '', operands: [], unit: 'dimensionless', experiment_idx: 0 }])
   })
 
-  it('names items by place when experiments share a label or have none', () => {
-    const shared = { ...DOCUMENT, protocol_info: { ...DOCUMENT.protocol_info, experiment_labels: ['Control', 'Half g_Na', 'Control'] } }
-    expect(placesOf(addOutput(shared, { ...I_PEAK, experiments: [1, 2], subexperiment: 0 }))).toEqual([
-      ['I_peak_Half_g_Na', 1, 0],
-      ['I_peak_e2', 2, 0],
-    ])
-    const unlabelled = { protocol_info: { pre_times: [0, 0], sim_times: [[1], [1]] } }
-    expect(placesOf(addOutput(unlabelled, { ...I_PEAK, subexperiment: null }))).toEqual([
-      ['I_peak_e0', 0, undefined],
-      ['I_peak_e1', 1, undefined],
-    ])
-  })
-
-  it('writes no operation_kwargs for none, nor an operation spelled as none', () => {
-    const [item] = addOutput(DOCUMENT, { ...I_PEAK, experiments: [0], operation: 'max', operationKwargs: {} }).prediction_items
-    expect(item).not.toHaveProperty('operation_kwargs')
-    const [trace] = addOutput(DOCUMENT, { ...I_PEAK, experiments: [0], operation: 'None' }).prediction_items
-    expect(trace).not.toHaveProperty('operation')
-    expect(trace).not.toHaveProperty('operation_kwargs')
-  })
-
-  it('never writes measured data', () => {
-    const [item] = addOutput(DOCUMENT, { ...I_PEAK, value: 1, std: 1, data_type: 'constant', obs_dt: 1 }).prediction_items
-    expect(['value', 'std', 'data_type', 'obs_dt'].filter((key) => key in item)).toEqual([])
+  it('makes a bare list of data items the data_items of a document', () => {
+    expect(addPredictionItem([{ data_item_name: 'a' }], { ...createPredictionItem(), operands: ['m/V'] })).toEqual({
+      data_items: [{ data_item_name: 'a' }],
+      prediction_items: [{ data_item_name: 'm/V', operands: ['m/V'], unit: 'dimensionless', experiment_idx: 0 }],
+    })
   })
 })
 
-describe('listOutputs', () => {
-  it('groups the items of an output, and keeps validation data apart', () => {
-    const outputs = listOutputs(readFixture('prediction_items_536_obs_data.json'))
-    expect(outputs.map(({ key, kind, experiments, isValidationData: isData }) => [key, kind, experiments, isData])).toEqual([
-      // Named as CA names them for plotting: these have no item_name_for_plotting.
-      ['output:membrane/V', 'trace', [0], false],
-      ['output:i_Na/i_Na', 'trace', [0], false],
-      ['output:I_peak', 'feature', [0, 1], false],
-      ['output:V_step', 'feature', [1], false],
-      ['data:i_Na/i_Na', 'feature', [1], true],
-    ])
-    const peak = outputs[2]
-    expect(peak).toMatchObject({ name: 'I_peak', operands: ['i_Na/i_Na'], operation: 'min_in_range', operationKwargs: { start_frac: 0, end_frac: 0.2 }, subexperiment: 1, isUniform: true })
-    expect(peak.items).toEqual([
-      { index: 2, name: 'I_peak_e0', experiment: 0, subexperiment: 1 },
-      { index: 3, name: 'I_peak_e1', experiment: 1, subexperiment: 1 },
-    ])
+describe('updatePredictionItem', () => {
+  it('changes one item in its place, keeping its held-out data and other keys', () => {
+    const edited = updatePredictionItem(OUTPUTS_DOCUMENT, 3, { operation: 'min', experiment: 2 })
+    expect(edited.prediction_items[3]).toEqual({ ...OUTPUTS_DOCUMENT.prediction_items[3], operation: 'min', experiment_idx: 2 })
+    expect(edited.prediction_items.slice(0, 3)).toEqual(OUTPUTS_DOCUMENT.prediction_items.slice(0, 3))
+    expect(updatePredictionItem(OUTPUTS_DOCUMENT, 9, { unit: 'x' })).toBe(OUTPUTS_DOCUMENT)
   })
 
-  it('says when the items of an output differ in more than their experiment', () => {
-    const document = { prediction_items: [{ data_item_name: 'a', item_name_for_plotting: 'x', operands: ['m/v'], unit: 'mV' }, { data_item_name: 'b', item_name_for_plotting: 'x', operands: ['m/w'], unit: 'mV', experiment_idx: 1 }] }
-    expect(listOutputs(document)[0].isUniform).toBe(false)
-    expect(listOutputs(null)).toEqual([])
-    expect(listOutputs([{ data_item_name: 'bare' }])).toEqual([])
-  })
-
-  it('groups items as CA names them for plotting, legacy keys too', () => {
-    const items = [
-      { data_item_name: 'V_max', operands: ['membrane/V'], unit: 'mV', operation: 'max' },
-      { data_item_name: 'V_min', operands: ['membrane/V'], unit: 'mV', operation: 'min' },
-      { variable: 'membrane/I', unit: 'nA', operation: 'max' },
-      { data_item_name: 'V_pk', name_for_plotting: 'Vpk', operands: ['membrane/V'], unit: 'mV', operation: 'max' },
-      { data_item_name: 'V_late', trace_name_for_plotting: 'Voltage', operands: ['membrane/V'], unit: 'mV', operation: 'max' },
-    ]
-    const document = { protocol_info: { sim_times: [[1]] }, prediction_items: items }
-    const outputs = listOutputs(document)
-    expect(outputs.map(({ name }) => name)).toEqual(['membrane/V', 'membrane/I', 'Vpk', 'Voltage'])
-    expect(new Set(readPredictionItemsAsCircAutogen(document).predictionInfo.item_names_for_plotting)).toEqual(new Set(outputs.map(({ name }) => name)))
-    expect(outputs.map(({ hasRepeatedExperiment }) => hasRepeatedExperiment)).toEqual([true, false, false, false])
-  })
-
-  it('tells validation data by its measured data', () => {
-    expect(isValidationData({ data_item_name: 'a' })).toBe(false)
-    expect(isValidationData({ data_item_name: 'a', value: null })).toBe(false)
-    expect(['value', 'std', 'data_type', 'obs_dt'].map((key) => isValidationData({ [key]: 0 }))).toEqual([true, true, true, true])
-    expect(findOutputKey({ data_item_name: 'a', item_name_for_plotting: 'b', data_type: 'series' })).toBe('data:b')
-  })
-})
-
-describe('updateOutput and removeOutput', () => {
-  const document = addOutput(addOutput(DOCUMENT, { name: 'V', operands: ['membrane/V'], unit: 'mV', experiments: [0] }), I_PEAK)
-
-  it('changes an output in place, its items keeping their names', () => {
-    const edited = updateOutput(document, 'output:I_peak', { operation: 'max_in_range', operationKwargs: { start_frac: 0.1, end_frac: 0.5 } })
-    expect(placesOf(edited)).toEqual(placesOf(document))
-    expect(edited.prediction_items.slice(1).map((item) => [item.operation, item.operation_kwargs])).toEqual([
-      ['max_in_range', { start_frac: 0.1, end_frac: 0.5 }],
-      ['max_in_range', { start_frac: 0.1, end_frac: 0.5 }],
-    ])
-    expect(edited.prediction_items[1].trace_name_for_plotting).toBe('Sodium current')
-  })
-
-  it('adds and drops experiments, naming only the new items', () => {
-    let edited = updateOutput(document, 'output:I_peak', { experiments: [1, 2], subexperiment: 0 })
-    expect(placesOf(edited)).toEqual([
-      ['V', 0, undefined],
-      ['I_peak_Half_g_Na', 1, 0],
-      ['I_peak_Wash_out', 2, 0],
-    ])
-    // An item named for its one experiment is named for it once the output has several.
-    edited = updateOutput(edited, 'output:V', { experiments: [0, 1] })
-    expect(placesOf(edited).slice(0, 2)).toEqual([
-      ['V_Control', 0, undefined],
-      ['V_Half_g_Na', 1, undefined],
-    ])
-  })
-
-  it('renames an output, and its items with it', () => {
-    const edited = updateOutput(document, 'output:I_peak', { name: 'I_min' })
-    expect(placesOf(edited).slice(1).map(([name]) => name)).toEqual(['I_min_Control', 'I_min_Half_g_Na'])
-    expect(listOutputs(edited).map(({ key }) => key)).toEqual(['output:V', 'output:I_min'])
-  })
-
-  it('removes an output', () => {
-    expect(placesOf(removeOutput(document, 'output:I_peak'))).toEqual([['V', 0, undefined]])
-  })
-
-  it('never changes an output with two items in one experiment, which would drop one', () => {
-    const shared = {
+  it("renames it in the other items' kwargs, unless another item keeps the name", () => {
+    const document = {
       ...DOCUMENT,
       prediction_items: [
-        { data_item_name: 'V_a', operands: ['membrane/V'], unit: 'mV', experiment_idx: 0, subexperiment_idx: 0, item_name_for_plotting: 'V' },
-        { data_item_name: 'V_b', operands: ['membrane/V'], unit: 'mV', experiment_idx: 0, subexperiment_idx: 1, item_name_for_plotting: 'V' },
+        { data_item_name: 'f', operands: ['f/f'], unit: '1', operation: 'mean' },
+        { data_item_name: 'V_late', operands: ['m/V'], unit: 'mV', operation: 'max_in_range', operation_kwargs: { start_frac: 'f', end_frac: 1 } },
       ],
     }
-    expect(listOutputs(shared)[0]).toMatchObject({ experiments: [0], isUniform: false, hasRepeatedExperiment: true })
-    expect(updateOutput(shared, 'output:V', { unit: 'V' })).toBe(shared)
-    expect(removeOutput(shared, 'output:V').prediction_items).toEqual([])
+    expect(updatePredictionItem(document, 0, { name: 'f_late' }).prediction_items[1].operation_kwargs).toEqual({ start_frac: 'f_late', end_frac: 1 })
+    const shared = { ...document, prediction_items: [...document.prediction_items, { data_item_name: 'f', operands: ['g/g'], unit: '1' }] }
+    expect(updatePredictionItem(shared, 0, { name: 'f_late' }).prediction_items[1].operation_kwargs.start_frac).toBe('f')
   })
 
-  it('never changes or removes validation data', () => {
-    const fixture = readFixture('prediction_items_536_obs_data.json')
-    expect(updateOutput(fixture, 'data:i_Na/i_Na', { unit: 'mA' })).toBe(fixture)
-    expect(removeOutput(fixture, 'data:i_Na/i_Na')).toBe(fixture)
-    expect(removeOutput(fixture, 'output:nothing')).toBe(fixture)
+  it('names an item left unnamed after its variable, apart from the others', () => {
+    const document = { ...DOCUMENT, prediction_items: [{ data_item_name: '', operands: [], unit: 'mV' }, { data_item_name: 'membrane/V', operands: ['membrane/V'], unit: 'mV' }] }
+    expect(updatePredictionItem(document, 0, { operands: ['membrane/V'] }).prediction_items[0].data_item_name).toBe('membrane/V_2')
+    expect(updatePredictionItem(document, 1, { name: '' }).prediction_items[1].data_item_name).toBe('membrane/V')
   })
 })
 
-describe('outputs through edits of the protocol', () => {
-  // Experiment 1 has a validation item of its own; the outputs record over named and last sub-experiments.
-  const document = addOutput(
-    addOutput({ ...DOCUMENT, prediction_items: [{ data_item_name: 'I_late', operands: ['i_Na/i_Na'], unit: 'uA_per_cm2', operation: 'max', experiment_idx: 1, data_type: 'constant', value: -0.5, std: 0.1 }] }, I_PEAK),
-    { name: 'V', operands: ['membrane/V'], unit: 'mV', experiments: [0, 1, 2] }
-  )
+describe('removePredictionItem', () => {
+  it('removes one item, and nothing for a place with none', () => {
+    expect(placesOf(removePredictionItem(OUTPUTS_DOCUMENT, 1))).toEqual([
+      ['I_peak_Control', 0, 1],
+      ['V_rest_2', 2, undefined],
+      ['I_late', 1, undefined],
+    ])
+    expect(removePredictionItem(OUTPUTS_DOCUMENT, 4)).toBe(OUTPUTS_DOCUMENT)
+    expect(removePredictionItem(OUTPUTS_DOCUMENT, -1)).toBe(OUTPUTS_DOCUMENT)
+  })
+})
 
-  it('moves outputs with their experiments', () => {
-    const moved = moveExperiment(document, 0, 2)
-    expect(placesOf(moved)).toEqual([
-      ['I_late', 0, undefined],
+describe('documents written by the Outputs of protocol-kit 0.2 to 0.4', () => {
+  it.each([
+    ['an output in two experiments, a trace and validation data', OUTPUTS_DOCUMENT],
+    ['prediction_items_536_obs_data.json', readFixture('prediction_items_536_obs_data.json')],
+  ])('%s: one row per item, saved back unchanged', (_, document) => {
+    const rows = listPredictionItems(document)
+    expect(rows.map(({ index, name }) => [index, name])).toEqual(document.prediction_items.map((item, index) => [index, item.data_item_name]))
+    let saved = document
+    for (const row of rows) saved = updatePredictionItem(saved, row.index, {})
+    expect(serialiseObsData(saved)).toEqual(serialiseObsData(document))
+  })
+
+  it('saves the fixture back byte for byte', () => {
+    const text = readText('prediction_items_536_obs_data.json')
+    let { document } = parseObsData(text)
+    for (const row of listPredictionItems(document)) document = updatePredictionItem(document, row.index, { ...row })
+    expect(new TextDecoder().decode(serialiseObsData(document))).toBe(text)
+  })
+
+  it('edits one item of an output alone, the others keeping its definition', () => {
+    const edited = updatePredictionItem(OUTPUTS_DOCUMENT, 1, { operationKwargs: { start_frac: 0.1, end_frac: 0.3 } })
+    expect(edited.prediction_items[0]).toEqual(OUTPUTS_DOCUMENT.prediction_items[0])
+    expect(edited.prediction_items[1].operation_kwargs).toEqual({ start_frac: 0.1, end_frac: 0.3 })
+  })
+})
+
+describe('prediction items through edits of the protocol', () => {
+  it('move with their experiments, and go with a removed one, renumbered', () => {
+    expect(placesOf(moveExperiment(OUTPUTS_DOCUMENT, 0, 2))).toEqual([
       ['I_peak_Control', 2, 1],
       ['I_peak_Half_g_Na', 0, 1],
-      ['V_Control', 2, undefined],
-      ['V_Half_g_Na', 0, undefined],
-      ['V_Wash_out', 1, undefined],
+      ['V_rest_2', 1, undefined],
+      ['I_late', 0, undefined],
     ])
-    // Only places change: the validation item's data, and each output's definition, stay.
-    expect(moved.prediction_items[0]).toEqual({ ...document.prediction_items[0], experiment_idx: 0 })
-    expect(listOutputs(moved).map(({ key, experiments }) => [key, experiments])).toEqual([
-      ['data:i_Na/i_Na', [0]],
-      ['output:I_peak', [2, 0]],
-      ['output:V', [2, 0, 1]],
-    ])
-  })
-
-  it('drops the items of a removed experiment, renumbering the rest', () => {
-    expect(findObservationsAt(document, 1)).toEqual(['I_late', 'I_peak_Half_g_Na', 'V_Half_g_Na'])
-    expect(placesOf(removeExperiment(document, 1))).toEqual([
+    expect(findObservationsAt(OUTPUTS_DOCUMENT, 1)).toEqual(['I_peak_Half_g_Na', 'I_late'])
+    expect(placesOf(removeExperiment(OUTPUTS_DOCUMENT, 1))).toEqual([
       ['I_peak_Control', 0, 1],
-      ['V_Control', 0, undefined],
-      ['V_Wash_out', 1, undefined],
+      ['V_rest_2', 1, undefined],
     ])
   })
 
-  it('drops the items of a removed sub-experiment, and those recording over the last follow it', () => {
-    expect(findObservationsAt(document, 0, 1)).toEqual(['I_peak_Control'])
-    expect(placesOf(removeSubExperiment(document, 0, 1)).slice(0, 3)).toEqual([
-      ['I_late', 1, undefined],
+  it('go with a removed sub-experiment, and those over the last follow it', () => {
+    expect(placesOf(removeSubExperiment(OUTPUTS_DOCUMENT, 0, 1))).toEqual([
       ['I_peak_Half_g_Na', 1, 1],
-      ['V_Control', 0, undefined],
+      ['V_rest_2', 2, undefined],
+      ['I_late', 1, undefined],
     ])
-    const shifted = removeSubExperiment(document, 1, 0)
-    expect(placesOf(shifted)[2]).toEqual(['I_peak_Half_g_Na', 1, 0])
+    const shifted = removeSubExperiment(OUTPUTS_DOCUMENT, 1, 0)
+    expect(placesOf(shifted)[1]).toEqual(['I_peak_Half_g_Na', 1, 0])
     expect(validatePredictionItems(shifted).errors).toEqual([])
-    // A sub-experiment added after the one an output names leaves it there.
-    expect(placesOf(addSubExperiment(document, 0))).toEqual(placesOf(document))
-  })
-
-  it('reads as CA #536 reads it after each edit', () => {
-    for (const edited of [document, moveExperiment(document, 0, 2), removeExperiment(document, 0), removeSubExperiment(document, 1, 1)]) {
-      expect(readPredictionItemsAsCircAutogen(edited).error).toBeNull()
-    }
+    expect(placesOf(addSubExperiment(OUTPUTS_DOCUMENT, 0))).toEqual(placesOf(OUTPUTS_DOCUMENT))
   })
 })
 
-describe('outputs in a CUFLynx file', () => {
+describe('prediction items in a CUFLynx file', () => {
   it('leave its protocol_info and data items as they were, byte for byte', () => {
-    const text = readFileSync(join(RESOURCES, 'br-1977_obs_data.json'), 'utf8')
-    const document = JSON.parse(text)
-    let edited = addOutput(document, { name: 'V_peak', operands: ['membrane/V'], unit: 'mV', experiments: [0], operation: 'max' })
-    edited = updateOutput(edited, 'output:V_peak', { operation: 'max_in_range', operationKwargs: { start_frac: 0.5, end_frac: 1 } })
+    const document = readFixture('br-1977_obs_data.json')
+    let edited = addPredictionItem(document, { ...createPredictionItem(), operands: ['membrane/V'], unit: 'mV', operation: 'max' })
+    edited = updatePredictionItem(edited, 0, { operation: 'max_in_range', operationKwargs: { start_frac: 0.5, end_frac: 1 } })
     for (const key of Object.keys(document)) expect(JSON.stringify(edited[key])).toBe(JSON.stringify(document[key]))
     expect(Object.keys(edited)).toEqual([...Object.keys(document), 'prediction_items'])
-    expect(JSON.stringify(removeOutput(edited, 'output:V_peak').protocol_info)).toBe(JSON.stringify(document.protocol_info))
+    expect(JSON.stringify(removePredictionItem(edited, 0).protocol_info)).toBe(JSON.stringify(document.protocol_info))
   })
 })

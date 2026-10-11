@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+Breaking: the editor edits an obs_data document as CUFLynx's "Edit obs_data" dialog does, one row per item, and the
+Outputs and their feature plots form are gone.
+
+- Prediction items are edited one at a time, as rows (`listPredictionItems`, `readPredictionItemRow`,
+  `buildPredictionItem`, `createPredictionItem`, `addPredictionItem`, `updatePredictionItem`, `removePredictionItem`),
+  replacing the Outputs (`listOutputs`, `addOutput`, `updateOutput`, `removeOutput`, `findOutputKey`,
+  `OUTPUT_OPERATIONS`) and the names they made up. An item left unnamed is named after its variable, apart from every
+  other item (`findFreeItemName`), as CA #536 requires names unique. A renamed item is renamed in the other prediction
+  items' operation_kwargs, and prediction plots follow a group renamed in its last item. An item read and written back
+  is the same, held-out data (`value`, `std`, `data_type`, `obs_dt`) and keys unknown included, legacy keys written as
+  their replacements; held-out items are edited like the others, their data kept (`isValidationData` marks them). A
+  document the Outputs of 0.2 to 0.4 wrote reads as one row per item and saves back unchanged.
+- Data items' features, computed as CA #536's cost loop does (`computeDataItemFeatures`): each constant item with an
+  operation over its sub-experiment (the first by default), the sub-experiments in order and each one's items in the
+  order of data_items, so an operation_kwargs value may name an item computed before it, there or in an earlier
+  sub-experiment. `sliceRangeBounds(count, kwargs)` gives the samples an `*_in_range` operation takes, for a host to
+  draw a feature over them; `computeFeatures` and `computeDataItemFeatures` give each feature its `kwargs`, those naming
+  an earlier feature as its value. Golden vectors from CA 7e9fdb55's own get_obs_output_dict and range funcs
+  (`scripts/generate_operation_vectors.py`) check both.
+- `first_peak_time` is computed (`applyOperation`, `computeFeatures`, `computeDataItemFeatures`): over the operands
+  `[t, V]`, the time of V's first peak as scipy's `find_peaks` finds it, at least `spike_min_thresh` high when given,
+  or the last time when there is none, as CA's own. An operation now reads as many operands as CA's func names, and
+  its kwargs are checked against those it fills. Vectors from CA 7e9fdb55's func check it.
+- The editor: `ObsDataEditor`, the top level, a section per key of the document as CUFLynx's dialog has them, headed by
+  the raw key: `protocol_info`, `data_items`, `prediction_items` and `prediction_plots`. It holds the experiment shown,
+  and the row selected, whose experiment it shows and whose sub-experiment it tints. A data-only document shows
+  `protocol_info`, with "Add protocol_info", and its data items. `preset` chooses the host's app: `'cuflynx'` edits
+  every column; `'phlynx'` shows the data items read-only, without weight, cost and differentiability.
+  - `ProtocolInfoEditor` is the timeline `ProtocolEditor` was, without the outputs and data items, and takes
+    `v-model:activeExp`, `highlightExp` and `highlightSubexp`. It no longer takes `dt`, `showDataItems`,
+    `dataItemColumns`, `dataItemsReadOnly` or `dataItemVocabulary`, which `ObsDataEditor` takes.
+  - `DataItemsSection`: CUFLynx's rows (`name | value | std | operation | exp | sub`), and under a chevron the
+    operands, trace label, unit, weight, cost type and its kwargs, plot type, operation kwargs, source and comment.
+    Rows CA refuses, and rows whose operation it can't differentiate, are tinted and say why; items a row can't hold
+    are kept, and counted ("N non-editable item(s)… will be preserved unchanged"). Its presets
+    (`DATA_ITEM_COLUMN_PRESETS`: `cuflynx`, `phlynx`, replacing `all` and `summary`) and `readOnly` say what it shows
+    and edits; `isSummaryColumns` is gone (`isReadOnlyPreset`). `isRowDataItem` says which items it lists as rows, for
+    a host to count them.
+  - `PredictionItemsSection`: `variable | unit | trace label | exp | sub | operation`, the sub-experiment "(last)" or
+    an index and the operation "(none)" or one of CA's; under a chevron the name, item label and operation kwargs
+    (`start_frac` and `end_frac` for a range). Held-out items are marked `obs`. `predictionItemColumns.js` holds its
+    columns and presets.
+  - `PredictionPlotsSection`: `name | kind | y | x | series`, over the feature groups and the inputs in each
+    sub-experiment, with `validatePredictionPlots`' errors under each row.
+  - `ProtocolOutputsEditor`, `ProtocolFeaturePlotsEditor` and the form of `ProtocolDataItemsEditor` are removed.
+- CA's messages say "prediction item" where they said "output".
+
 ## 0.4.0 (2026-10-10)
 
 - Features, computed as circulatory_autogen #536 computes them (`computeFeatures`): each prediction item with an

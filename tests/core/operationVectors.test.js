@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { OperationError, applyOperation, computeMean, sliceRange, sumPairwise } from '../../src/core/operations.js'
+import { OperationError, applyOperation, computeMean, sliceRange, sliceRangeBounds, sumPairwise } from '../../src/core/operations.js'
 
 const RESOURCES = join(__dirname, '../resources')
 // What circulatory_autogen's own operation funcs give for each case (scripts/generate_operation_vectors.py).
@@ -54,6 +54,26 @@ describe("the port of circulatory_autogen's operations", () => {
   })
 })
 
+describe("the port of circulatory_autogen's first_peak_time", () => {
+  it.each(VECTORS.peaks.map((vector) => [`first_peak_time(${vector.series}, ${JSON.stringify(vector.operation_kwargs)})`, vector]))('gives %s as CA does, to the bit', (_, vector) => {
+    let result
+    try {
+      result = { value: applyOperation('first_peak_time', [decodeSeries(vector.times), decodeSeries(vector.values)], vector.operation_kwargs ?? {}) }
+    } catch (error) {
+      if (!(error instanceof OperationError)) throw error
+      result = { error: error.pythonType }
+    }
+    if ('error' in vector) expect(result).toEqual({ error: vector.error })
+    else expect(Object.is(result.value, SPECIAL[vector.value] ?? vector.value), `${result.value ?? result.error} for ${vector.value}`).toBe(true)
+  })
+
+  it('covers a peak, a plateau, no peak, a threshold and errors CA raises', () => {
+    expect(new Set(VECTORS.peaks.map(({ series }) => series)).size).toBeGreaterThan(10)
+    expect(VECTORS.peaks.some((vector) => vector.error === 'TypeError')).toBe(true)
+    expect(VECTORS.peaks.some((vector) => vector.error === 'ValueError')).toBe(true)
+  })
+})
+
 describe('sumPairwise', () => {
   it('sums in numpy order, which a plain loop does not', () => {
     // Over 128 values a plain sum rounds differently from numpy's pairs of blocks.
@@ -67,6 +87,23 @@ describe('sumPairwise', () => {
   it('makes a sum of negative zeros 0, and a mean of nothing NaN', () => {
     expect(Object.is(computeMean([-0, -0]), 0)).toBe(true)
     expect(computeMean([])).toBeNaN()
+  })
+})
+
+describe('sliceRangeBounds', () => {
+  it.each(VECTORS.bounds.map((vector) => [`${vector.count} samples, ${JSON.stringify(vector.operation_kwargs)}`, vector]))("takes the samples CA's own funcs take of %s", (_, vector) => {
+    if (vector.error) {
+      expect(() => sliceRangeBounds(vector.count, vector.operation_kwargs)).toThrow(OperationError)
+      return
+    }
+    const { start, end } = sliceRangeBounds(vector.count, vector.operation_kwargs)
+    if (vector.empty) expect(end).toBe(start)
+    else expect({ start, end }).toEqual({ start: vector.start, end: vector.end })
+  })
+
+  it('covers windows that take samples and windows that take none', () => {
+    expect(VECTORS.bounds.some((vector) => vector.empty)).toBe(true)
+    expect(VECTORS.bounds.filter((vector) => !vector.empty).length).toBeGreaterThan(40)
   })
 })
 
@@ -100,12 +137,16 @@ describe('applyOperation', () => {
     )
   })
 
-  it("refuses kwargs the operation doesn't take, an operation it doesn't know, and other than one operand", () => {
+  it("refuses kwargs the operation doesn't take, an operation it doesn't know, and other than its operands", () => {
     expect(() => applyOperation('max', [[1]], { start_frac: 0 }, { name: 'peak' })).toThrow(
       "Invalid 'operation_kwargs' key 'start_frac' in data_item 'peak': the operation func 'max' has no keyword argument 'start_frac'. Accepted keyword arguments are: ['x']."
     )
     expect(() => applyOperation('mean_in_range', [[1]], { series_output: true })).toThrow("'series_output' is set by circulatory_autogen")
-    expect(() => applyOperation('first_peak_time', [[1]])).toThrow("operation 'first_peak_time' is not one protocol-kit computes.")
+    expect(() => applyOperation('first_peak_time_from_subexp_start', [[0], [1]])).toThrow("operation 'first_peak_time_from_subexp_start' is not one protocol-kit computes.")
     expect(() => applyOperation('max', [[1], [2]])).toThrow('max takes one operand, got 2.')
+    expect(() => applyOperation('first_peak_time', [[1]])).toThrow('first_peak_time takes 2 operands, got 1.')
+    expect(() => applyOperation('first_peak_time', [[0], [1]], { V: 1 }, { name: 'spike' })).toThrow("already receives 'V' positionally from the data_item's 'operands' (operands fill ['t', 'V']).")
+    expect(() => applyOperation('first_peak_time', [[0], [1]], { q: 1 })).toThrow("Accepted keyword arguments are: ['V', 'spike_min_thresh', 't'].")
+    expect(() => applyOperation('first_peak_time', [[0, 1, 2], [0, 1, 0]], { spike_min_thresh: [1] })).toThrow('spike_min_thresh must be a number')
   })
 })
