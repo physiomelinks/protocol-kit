@@ -127,7 +127,7 @@ Every function takes and gives plain JSON-like values; edits never change the do
 | `features` | Computes a run's features from each sub-experiment's samples: its prediction items' as CA's features_from_segments does, its data items' as its cost loop does. | `computeFeatures`, `computeDataItemFeatures` |
 | `predictionPlots` | Edits and checks a document's prediction plots, and pairs features into their points. | `addPredictionPlot`, `updatePredictionPlot`, `removePredictionPlot`, `validatePredictionPlots`, `listFeatureGroups`, `computePlotSeries`, `findPlotsLosingInput`, `PREDICTION_PLOT_KINDS` |
 | `predictionValidation` | Checks prediction items as CA #536 does, with its messages, then each range for the run's `dt`. | `readPredictionItemsAsCircAutogen`, `validatePredictionItems`, `checkOperationRange`, `findPredictionItemLimits`, `readPredictionItem`, `nameItemForPlotting`, `PREDICTION_ITEM_KEYS` |
-| `dataItems` | Edits a document's data items, each read as a form's row and written back as CUFLynx's editor did. | `listDataItems`, `addDataItem`, `updateDataItem`, `removeDataItem`, `readDataItem`, `buildDataItem`, `createDataItem`, `DATA_ITEM_FIELDS` |
+| `dataItems` | Edits a document's data items, each read as a form's row and written back as CUFLynx's editor did. | `listDataItems`, `isRowDataItem`, `addDataItem`, `updateDataItem`, `removeDataItem`, `readDataItem`, `buildDataItem`, `createDataItem`, `DATA_ITEM_FIELDS` |
 | `dataItemValidation` | Checks data items as CA #536 reads them, with its messages, then each for an editor: kwargs, references, experiments. | `readDataItemsAsCircAutogen`, `validateDataItems`, `checkOperationKwargs`, `checkCostKwargs`, `checkDataItemReferences`, `DATA_ITEM_KEYS` |
 | `dataItemVocabulary` | CA #536's data types, plot types, default cost, operations and cost funcs, for an editor to offer. | `DATA_ITEM_VOCABULARY`, `readObsDataOptions`, `DATA_TYPES`, `PLOT_TYPES`, `DEFAULT_COST_TYPE`, `DATA_ITEM_OPERATIONS`, `DATA_ITEM_COST_TYPES` |
 | `protocolCompatibility` | Lists what CA, and so CUFLynx, can't run of a protocol. | `findCircAutogenLimits` |
@@ -203,7 +203,8 @@ const { errors, warnings, itemErrors, itemWarnings, sharedErrors } = validateDat
 A row holds an item's fields under the names CUFLynx's editor gave them (`readDataItem`): `''` is no operation and the
 default cost, a `plotType` of null the data type's default and `''` no marker (`'None'`), and labels left `''` CA's
 defaults. `buildDataItem` writes only the fields that changed, so an item read and written back is the same, keys it
-doesn't know of included; `updateDataItem` renames an item where other data items' `operation_kwargs` name it. Every
+doesn't know of included; `updateDataItem` renames an item where other data items' `operation_kwargs` name it.
+`isRowDataItem(row, vocabulary)` says whether the editor lists an item as a row, for a host counting them. Every
 edit gives each item an `experiment_idx` and `subexperiment_idx` once one has them, as CA refuses a column some lack.
 
 `readDataItemsAsCircAutogen` reads data items as #536's parser does, stopping at its first error, pandas' quirks

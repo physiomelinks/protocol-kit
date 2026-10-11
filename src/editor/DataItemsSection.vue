@@ -163,7 +163,7 @@ import KwargField from './KwargField.vue'
 import VariableCell from './VariableCell.vue'
 import { DATA_ITEM_COLUMNS, isReadOnlyPreset, resolveDataItemColumns } from './dataItemColumns.js'
 import './obsDataRows.css'
-import { addDataItem, createDataItem, listDataItems, removeDataItem, updateDataItem } from '../core/dataItems.js'
+import { addDataItem, createDataItem, isRowDataItem, listDataItems, removeDataItem, updateDataItem } from '../core/dataItems.js'
 import { validateDataItems } from '../core/dataItemValidation.js'
 import { DATA_ITEM_COST_TYPES, DATA_ITEM_VOCABULARY } from '../core/dataItemVocabulary.js'
 import { findFreeItemName } from '../core/predictionItems.js'
@@ -203,17 +203,7 @@ const operationNames = computed(() => props.vocabulary.operations.map(({ name })
 // The time, which an operation such as a period takes, and the model's variables.
 const variablesWithTime = computed(() => [{ name: 'time', kind: 'variable' }, ...props.variables])
 
-/**
- * Whether a row can hold an item: a constant of one value, with no operation or one CA has. A series, a frequency, a
- * distribution, or an operation of the user's own is kept as it is.
- *
- * @param {Object} row - From listDataItems.
- * @returns {boolean}
- */
-const isRowItem = (row) =>
-  row.dataType === 'constant' && (!row.operation || operationNames.value.includes(row.operation)) && !Array.isArray(row.value) && !Array.isArray(row.std) && !row.probDistParams
-
-const rows = computed(() => items.value.filter(isRowItem))
+const rows = computed(() => items.value.filter((row) => isRowDataItem(row, props.vocabulary)))
 const preservedCount = computed(() => items.value.length - rows.value.length)
 // Checked read-only too, as CA refuses the file all the same.
 const checked = computed(() => validateDataItems(props.document, { vocabulary: props.vocabulary }))

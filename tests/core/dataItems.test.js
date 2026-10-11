@@ -3,7 +3,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { addDataItem, buildDataItem, createDataItem, listDataItems, readDataItem, removeDataItem, updateDataItem } from '../../src/core/dataItems.js'
+import { addDataItem, buildDataItem, createDataItem, isRowDataItem, listDataItems, readDataItem, removeDataItem, updateDataItem } from '../../src/core/dataItems.js'
+import { readObsDataOptions } from '../../src/core/dataItemVocabulary.js'
 import { readDataItemsAsCircAutogen } from '../../src/core/dataItemValidation.js'
 import { removeSubExperiment } from '../../src/core/protocolEditing.js'
 
@@ -133,6 +134,20 @@ describe('listDataItems', () => {
     expect(listDataItems({ data_item: [PEAK] })).toHaveLength(1)
     expect(listDataItems([PEAK])[0].name).toBe('V_peak')
     expect(listDataItems(null)).toEqual([])
+  })
+})
+
+describe('isRowDataItem', () => {
+  it("lists a constant of one value as a row, with no operation or one the vocabulary has, and keeps the others", () => {
+    const rows = listDataItems([
+      { data_item_name: 'a', data_type: 'constant', operands: ['m/V'], operation: 'max', value: 1, std: 1 },
+      { data_item_name: 'b', data_type: 'constant', operands: ['m/V'], value: 1, std: 1 },
+      { data_item_name: 'c', data_type: 'series', operands: ['m/V'], value: [1, 2], std: 1, obs_dt: 0.1 },
+      { data_item_name: 'd', data_type: 'frequency', operands: ['m/V'], value: [1, 2], std: [1, 1], frequencies: [1, 2] },
+      { data_item_name: 'e', data_type: 'constant', operands: ['m/V'], operation: 'my_op', value: 1, std: 1 },
+    ])
+    expect(rows.map((row) => isRowDataItem(row))).toEqual([true, true, false, false, false])
+    expect(isRowDataItem(rows[4], readObsDataOptions({ operations: ['my_op'] }))).toBe(true)
   })
 })
 

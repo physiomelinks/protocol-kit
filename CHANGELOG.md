@@ -38,7 +38,8 @@ Outputs and their feature plots form are gone.
     Rows CA refuses, and rows whose operation it can't differentiate, are tinted and say why; items a row can't hold
     are kept, and counted ("N non-editable item(s)… will be preserved unchanged"). Its presets
     (`DATA_ITEM_COLUMN_PRESETS`: `cuflynx`, `phlynx`, replacing `all` and `summary`) and `readOnly` say what it shows
-    and edits; `isSummaryColumns` is gone (`isReadOnlyPreset`).
+    and edits; `isSummaryColumns` is gone (`isReadOnlyPreset`). `isRowDataItem` says which items it lists as rows, for
+    a host to count them.
   - `PredictionItemsSection`: `variable | unit | trace label | exp | sub | operation`, the sub-experiment "(last)" or
     an index and the operation "(none)" or one of CA's; under a chevron the name, item label and operation kwargs
     (`start_frac` and `end_frac` for a range). Held-out items are marked `obs`. `predictionItemColumns.js` holds its
